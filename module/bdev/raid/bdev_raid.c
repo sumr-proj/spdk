@@ -951,12 +951,7 @@ raid_bdev_create(const char *name, uint32_t strip_size, uint8_t num_base_bdevs,
 		return -EEXIST;
 	}
 
-	if (level == RAID1) {
-		if (strip_size != 0) {
-			SPDK_ERRLOG("Strip size is not supported by raid1\n");
-			return -EINVAL;
-		}
-	} else if (spdk_u32_is_pow2(strip_size) == false) {
+	if (spdk_u32_is_pow2(strip_size) == false) {
 		SPDK_ERRLOG("Invalid strip size %" PRIu32 "\n", strip_size);
 		return -EINVAL;
 	}
