@@ -5,6 +5,7 @@
 
 #ifndef SPDK_BDEV_RAID_INTERNAL_H
 #define SPDK_BDEV_RAID_INTERNAL_H
+#define MATRIX_REBUILD_SIZE 32768 /* 2^15 */
 
 #include "spdk/bdev_module.h"
 #include "spdk/uuid.h"
@@ -143,6 +144,8 @@ struct raid_bdev {
 	/* Raid Level of this raid bdev */
 	enum raid_level			level;
 
+	struct 				raid_rebuild;
+
 	/* Set to true if destroy of this raid bdev is started. */
 	bool				destroy_started;
 
@@ -151,6 +154,10 @@ struct raid_bdev {
 
 	/* Private data for the raid module */
 	void				*module_private;
+};
+
+struct raid_rebuild {
+  uint64_t rebuild_matrix[MATRIX_REBUILD_SIZE];
 };
 
 #define RAID_FOR_EACH_BASE_BDEV(r, i) \
