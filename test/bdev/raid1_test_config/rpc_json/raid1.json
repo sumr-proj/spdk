@@ -1,0 +1,37 @@
+{
+  "subsystems": [
+    {
+      "subsystem": "bdev",
+      "config": [
+        {
+          "params": {
+            "block_size": 4096,
+            "num_blocks": 16,
+            "name": "M0"
+          },
+          "method": "bdev_malloc_create"
+        },
+        {
+          "params": {
+            "block_size": 4096,
+            "num_blocks": 16,
+            "name": "M1"
+          },
+          "method": "bdev_malloc_create"
+        },
+        {
+          "method": "bdev_raid_create",
+          "params": {
+            "name": "Raid1",
+            "raid_level": "1",
+            "strip_size_kb": 8,
+            "base_bdevs": [
+              "M0",
+              "M1"
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

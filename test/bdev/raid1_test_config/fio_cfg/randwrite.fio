@@ -1,0 +1,13 @@
+[global]
+thread=1
+group_reporting=1
+direct=1
+verify=sha256
+size=1M
+iodepth=8
+rw=randwrite
+bs=4k
+
+[test]
+filename=/dev/ublkb1
+numjobs=1
