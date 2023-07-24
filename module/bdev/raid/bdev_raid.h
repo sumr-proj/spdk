@@ -144,6 +144,7 @@ struct raid_bdev {
 	/* Raid Level of this raid bdev */
 	enum raid_level			level;
 
+	/* RAID rebuild struct */
 	struct 				raid_rebuild;
 
 	/* Set to true if destroy of this raid bdev is started. */
@@ -154,10 +155,6 @@ struct raid_bdev {
 
 	/* Private data for the raid module */
 	void				*module_private;
-};
-
-struct raid_rebuild {
-  uint64_t rebuild_matrix[MATRIX_REBUILD_SIZE];
 };
 
 #define RAID_FOR_EACH_BASE_BDEV(r, i) \
@@ -197,6 +194,20 @@ const char *raid_bdev_state_to_str(enum raid_bdev_state state);
 void raid_bdev_write_info_json(struct raid_bdev *raid_bdev, struct spdk_json_write_ctx *w);
 int raid_bdev_remove_base_bdev(struct spdk_bdev *base_bdev, raid_bdev_remove_base_bdev_cb cb_fn,
 			       void *cb_ctx);
+
+/* 
+* raid_rebuild assists in the raid bdev rebuild process.
+*/
+struct raid_rebuild {
+	/* stores data on broken memory areas */
+	uint64_t rebuild_matrix[MATRIX_REBUILD_SIZE];
+	
+	/* number of base bdevs comprising raid bdev  */
+	uint8_t				num_base_bdevs;
+
+	/* number of memory areas */
+	uint64_t            num_memory_areas
+};
 
 /*
  * RAID module descriptor
