@@ -1604,6 +1604,26 @@ raid_bdev_add_base_device(struct raid_bdev *raid_bdev, const char *name, uint8_t
 	return 0;
 }
 
+static int
+fill_matrix(void) {
+	SPDK_ERRLOG("Fill matrix's stub\n");
+	return 0;
+};
+
+int
+raid_add_bdev(struct raid_bdev *raid_bdev, char *base_bdev, uint8_t slot) {
+	int rc;
+
+	rc = raid_bdev_add_base_device(raid_bdev, base_bdev, slot);
+	if (rc)
+		return rc;
+
+	rc = fill_matrix();
+	if (rc)
+		SPDK_ERRLOG("Failed to copy data to adding base bdev\n");
+	return rc;
+};
+
 /*
  * brief:
  * raid_bdev_examine function is the examine function call by the below layers

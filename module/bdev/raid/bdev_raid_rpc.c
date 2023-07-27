@@ -502,9 +502,9 @@ rpc_bdev_raid_add_base_bdev(struct spdk_jsonrpc_request *request,
 	}
 
 	for (uint8_t i = 0; i < raid_bdev->num_base_bdevs; i++) {
-		if (raid_bdev->base_bdev_info->name != NULL)
+		if (raid_bdev->base_bdev_info[i].name != NULL)
 			continue;
-		rc = raid_bdev->module->add_base_bdev(raid_bdev, req.base_bdev, i);
+		rc = raid_add_bdev(raid_bdev, req.base_bdev, i);
 		if (rc == -ENODEV) {
 			SPDK_DEBUGLOG(bdev_raid, "base bdev %s doesn't exist now\n", base_bdev_name);
 		} else if (rc != 0) {
