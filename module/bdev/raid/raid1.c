@@ -225,20 +225,21 @@ raid1_copy_data_to_base_bdev(struct raid_bdev *raid_bdev, char *base_bdev, uint8
 	// 	}
 	// }
 	SPDK_ERRLOG("Start the stub for copy data to base bdev\n");
+	return 0;
 }
 
 static int
 raid1_add_bdev(struct raid_bdev *raid_bdev, char *base_bdev, uint8_t slot) {
 	int rc;
 
-	rc = raid_bdev_add_base_device(raid_bdev, base_bdev_name, i);
+	rc = raid_bdev_add_base_device(raid_bdev, base_bdev, slot);
 	if (rc)
 		return rc;
 
 	rc = raid1_copy_data_to_base_bdev(raid_bdev, base_bdev, slot);
 	if (rc)
 		SPDK_ERRLOG("Faild to copy data to adding base bdev\n");
-	return rc
+	return rc;
 }
 
 static struct raid_bdev_module g_raid1_module = {
