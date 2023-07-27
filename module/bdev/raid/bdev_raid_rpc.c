@@ -451,3 +451,86 @@ err:
 	rpc_bdev_raid_remove_base_bdev_done(request, rc);
 }
 SPDK_RPC_REGISTER("bdev_raid_remove_base_bdev", rpc_bdev_raid_remove_base_bdev, SPDK_RPC_RUNTIME)
+
+static void
+free_rpc_bdev_raid_add_base_bdev(rpc_bdev_raid_add_base_bdev *req) {
+	free(req->name);
+	free(req->base_bdev)
+}
+
+struct rpc_bdev_raid_add_base_bdev {
+	char *name;
+	char *base_bdev;
+}
+
+static const struct spdk_json_object_decoder rpc_bdev_raid_add_base_bdev_decoders[] = {
+	{"name", offsetof(struct rpc_bdev_raid_add_base_bdev_decoders, name), spdk_json_decode_string},
+	{"base_bdev", offsetof(struct rpc_bdev_raid_add_base_bdev_decoders, base_bdevs), decode_base_bdevs},
+};
+
+/*
+ * brief:
+ * bdev_raid_add_base_bdev function is the RPC for adding base bdev to a raid bdev.
+ * It takes base bdev name and raid name as input.
+ * params:
+ * request - pointer to json rpc request
+ * params - pointer to request parameters
+ * returns:
+ * none
+ */
+static void
+rpc_bdev_raid_add_base_bdev(struct spdk_jsonrpc_request *request,
+			       const struct spdk_json_val *params)
+{
+	struct rpc_bdev_raid_add_base_bdev	req = {};
+	struct raid_bdev		*raid_bdev;
+	uint8_t				rc;
+
+	if (spdk_json_decode_object(params, rpc_bdev_raid_add_base_bdev_decoders,
+				    SPDK_COUNTOF(rpc_bdev_raid_add_base_bdev_decoders),
+				    &req)) {
+		spdk_jsonrpc_send_error_response(request, SPDK_JSONRPC_ERROR_PARSE_ERROR,
+						 "spdk_json_decode_object failed");
+		goto cleanup;
+	}
+
+	raid_bdev = raid_bdev_find_by_name(req.name);
+	if (raid_bdev == NULL) {
+		spdk_jsonrpc_send_error_response_fmt(request, -ENODEV,
+						     "raid bdev %s not found",
+						     ctx->req.name);
+		goto cleanup;
+	}
+
+	rc = raid_bdev_add_base_bdev(req.name, req.strip_size_kb, req.base_bdevs.num_base_bdevs,
+			      req.level, &raid_bdev, uuid);
+	if (rc != 0) {
+		spdk_jsonrpc_send_error_response_fmt(request, rc,
+						     "Failed to add RAID bdev %s: %s",
+						     req.name, spdk_strerror(-rc));
+		goto cleanup;
+	}
+
+	for (i = 0; i < raid_bdev->num_base_bdevs; i++) {
+		if (raid_bdev->base_bdev_info->name != NULL)
+			continue;
+		rc = raid_bdev->module->add_base_bdev(raid_bdev, req->base_bdev, i)
+		if (rc == -ENODEV) {
+			SPDK_DEBUGLOG(bdev_raid, "base bdev %s doesn't exist now\n", base_bdev_name);
+		} else if (rc != 0) {
+			spdk_jsonrpc_send_error_response_fmt(request, rc,
+							     "Failed to add base bdev %s to RAID bdev %s: %s",
+							     base_bdev, req.name,
+							     spdk_strerror(-rc));
+			goto cleanup;
+		} else {
+			SPDK_DEBUGLOG(bdev_raid, "base bdev %s added to raid bdev %s\n", base_bdev_name, req.name);
+		}
+	}
+
+	spdk_jsonrpc_send_bool_response(request, true);
+
+cleanup:
+	free_rpc_bdev_raid_add_base_bdev(&req);
+}
+SPDK_RPC_REGISTER("bdev_raid_remove_base_bdev", rpc_bdev_raid_remove_base_bdev, SPDK_RPC_RUNTIME)

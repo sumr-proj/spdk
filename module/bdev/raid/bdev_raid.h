@@ -254,6 +254,11 @@ struct raid_bdev_module {
 	 */
 	void (*resize)(struct raid_bdev *raid_bdev);
 
+	/*
+	 * Called when a base_bdev is adding to degraded raid.
+	 */
+	int (*add_base_bdev)(struct raid_bdev *raid_bdev, char *base_bdev, uint8_t slot)
+
 	TAILQ_ENTRY(raid_bdev_module) link;
 };
 

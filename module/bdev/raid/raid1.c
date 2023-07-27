@@ -209,6 +209,38 @@ raid1_stop(struct raid_bdev *raid_bdev)
 	return true;
 }
 
+static int
+raid1_copy_data_to_base_bdev(struct raid_bdev *raid_bdev, char *base_bdev, uint8_t slot) {
+	//it's don't work and can't work
+
+	// for (i = 0; i < raid_bdev->num_base_bdevs; i++) {
+	// 	if (raid_bdev->base_bdev_info[i].name == NULL || i == slot)
+	// 		continue;
+	// 	else {
+	// 		// struct *src_bdev = raid_bdev->base_bdev_info[i].desc;
+	// 		// struct *dst_bdev = spdk_bdev_get_by_name(base_bdev);
+	// 		// struct *spdk_io_channel src_channel = spdk_bdev_get_io_channel(src_bdev);
+	// 		// struct *spdk_io_channel dst_channel = spdk_bdev_get_io_channel(dst_bdev);
+	// 		// return spdk_bdev_copy_blocks(dst_bdev, );
+	// 	}
+	// }
+	SPDK_ERRLOG("Start the stub for copy data to base bdev\n");
+}
+
+static int
+raid1_add_bdev(struct raid_bdev *raid_bdev, char *base_bdev, uint8_t slot) {
+	int rc;
+
+	rc = raid_bdev_add_base_device(raid_bdev, base_bdev_name, i);
+	if (rc)
+		return rc;
+
+	rc = raid1_copy_data_to_base_bdev(raid_bdev, base_bdev, slot);
+	if (rc)
+		SPDK_ERRLOG("Faild to copy data to adding base bdev\n");
+	return rc
+}
+
 static struct raid_bdev_module g_raid1_module = {
 	.level = RAID1,
 	.base_bdevs_min = 2,
@@ -217,6 +249,7 @@ static struct raid_bdev_module g_raid1_module = {
 	.start = raid1_start,
 	.stop = raid1_stop,
 	.submit_rw_request = raid1_submit_rw_request,
+	.add_base_bdev = raid1_add_bdev,
 };
 RAID_MODULE_REGISTER(&g_raid1_module)
 
