@@ -516,6 +516,7 @@ rpc_bdev_raid_add_base_bdev(struct spdk_jsonrpc_request *request,
 		} else {
 			SPDK_DEBUGLOG(bdev_raid, "base bdev %s added to raid bdev %s\n", base_bdev_name, req.name);
 		}
+		break;
 	}
 
 	spdk_jsonrpc_send_bool_response(request, true);

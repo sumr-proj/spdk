@@ -1539,18 +1539,22 @@ raid_bdev_configure_base_bdev(struct raid_base_bdev_info *base_info)
 
 	SPDK_DEBUGLOG(bdev_raid, "bdev %s is claimed\n", bdev->name);
 
-	assert(raid_bdev->state != RAID_BDEV_STATE_ONLINE);
+	assert(raid_bdev->state == RAID_BDEV_STATE_ONLINE || raid_bdev->state == RAID_BDEV_STATE_CONFIGURING);
 
 	base_info->desc = desc;
-	base_info->blockcnt = bdev->blockcnt;
 	raid_bdev->num_base_bdevs_discovered++;
 	assert(raid_bdev->num_base_bdevs_discovered <= raid_bdev->num_base_bdevs);
 
-	if (raid_bdev->num_base_bdevs_discovered == raid_bdev->num_base_bdevs) {
-		rc = raid_bdev_configure(raid_bdev);
-		if (rc != 0) {
-			SPDK_ERRLOG("Failed to configure raid bdev\n");
-			return rc;
+	if (raid_bdev->state == RAID_BDEV_STATE_ONLINE) {
+		bdev->blockcnt = base_info->blockcnt;
+	} else {
+		base_info->blockcnt = bdev->blockcnt;
+		if (raid_bdev->num_base_bdevs_discovered == raid_bdev->num_base_bdevs) {
+			rc = raid_bdev_configure(raid_bdev);
+			if (rc != 0) {
+				SPDK_ERRLOG("Failed to configure raid bdev\n");
+				return rc;
+			}
 		}
 	}
 
@@ -1606,13 +1610,29 @@ raid_bdev_add_base_device(struct raid_bdev *raid_bdev, const char *name, uint8_t
 
 static int
 fill_matrix(void) {
-	SPDK_ERRLOG("Fill matrix's stub\n");
+	SPDK_DEBUGLOG("Fill matrix's stub\n");
 	return 0;
 };
 
 int
 raid_add_bdev(struct raid_bdev *raid_bdev, char *base_bdev, uint8_t slot) {
 	int rc;
+	struct spdk_bdev *bdev = spdk_bdev_get_by_name(base_bdev);
+
+	if (bdev == NULL) {
+		SPDK_ERRLOG("Currently unable to find bdev with name: %s\n", base_bdev);
+		return -ENXIO;
+	}
+
+	if (bdev->blocklen != raid_bdev->bdev.blocklen) {
+		SPDK_ERRLOG("Blocklen of the bdev %s not matching with other base bdevs\n", base_bdev);
+		return -EINVAL;
+	}
+	
+	if (bdev->blockcnt < raid_bdev->bdev.blockcnt) {
+		SPDK_ERRLOG("The bdev %s size is too small\n", base_bdev);
+		return -EINVAL;
+	}
 
 	rc = raid_bdev_add_base_device(raid_bdev, base_bdev, slot);
 	if (rc)
