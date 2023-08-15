@@ -1615,26 +1615,26 @@ fill_matrix(void) {
 };
 
 int
-raid_add_bdev(struct raid_bdev *raid_bdev, char *base_bdev, uint8_t slot) {
+raid_bdev_add_base_bdev(struct raid_bdev *raid_bdev, char *base_bdev_name, uint8_t slot) {
 	int rc;
-	struct spdk_bdev *bdev = spdk_bdev_get_by_name(base_bdev);
+	struct spdk_bdev *bdev = spdk_bdev_get_by_name(base_bdev_name);
 
 	if (bdev == NULL) {
-		SPDK_ERRLOG("Currently unable to find bdev with name: %s\n", base_bdev);
+		SPDK_ERRLOG("Currently unable to find bdev with name: %s\n", base_bdev_name);
 		return -ENXIO;
 	}
 
 	if (bdev->blocklen != raid_bdev->bdev.blocklen) {
-		SPDK_ERRLOG("Blocklen of the bdev %s not matching with other base bdevs\n", base_bdev);
+		SPDK_ERRLOG("Blocklen of the bdev %s not matching with other base bdevs\n", base_bdev_name);
 		return -EINVAL;
 	}
 	
 	if (bdev->blockcnt < raid_bdev->bdev.blockcnt) {
-		SPDK_ERRLOG("The bdev %s size is too small\n", base_bdev);
+		SPDK_ERRLOG("The bdev %s size is too small\n", base_bdev_name);
 		return -EINVAL;
 	}
 
-	rc = raid_bdev_add_base_device(raid_bdev, base_bdev, slot);
+	rc = raid_bdev_add_base_device(raid_bdev, base_bdev_name, slot);
 	if (rc)
 		return rc;
 
