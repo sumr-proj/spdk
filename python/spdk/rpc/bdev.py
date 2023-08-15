@@ -448,18 +448,18 @@ def bdev_raid_remove_base_bdev(client, name):
     params = {'name': name}
     return client.call('bdev_raid_remove_base_bdev', params)
 
-def bdev_raid_add_base_bdev(client, name, base_bdev):
+def bdev_raid_add_base_bdev(client, raid_name, base_bdev_name):
     """Add base bdev to existing raid bdev
 
     Args:
-        name: raid name
-        base_bdev: base bdev name
+        raid_name: raid bdev name
+        base_bdev_name: base bdev name
 
     Returns:
         None
     """
-    params = {'name': name,
-              'base_bdev': base_bdev}
+    params = {'raid_name': raid_name,
+              'base_bdev_name': base_bdev_name}
     return client.call('bdev_raid_add_base_bdev', params)
 
 
