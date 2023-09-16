@@ -173,7 +173,7 @@ struct raid_bdev {
 	enum raid_level			level;
 
 	/* RAID rebuild struct */
-	struct raid_rebuild			rebuild;
+	struct raid_rebuild			*rebuild;
 
 	/* Set to true if destroy of this raid bdev is started. */
 	bool				destroy_started;

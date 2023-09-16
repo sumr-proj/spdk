@@ -42,7 +42,7 @@ get_io_area_range(struct spdk_bdev_io *bdev_io, struct raid_bdev *raid_bdev, uin
 					    raid_bdev->strip_size) - offset_strips;
 
 	/* strips -> areas */
-	uint64_t strips_per_area = raid_bdev->rebuild.strips_per_area;
+	uint64_t strips_per_area = raid_bdev->rebuild->strips_per_area;
 
 	uint64_t offset_areas = offset_strips / strips_per_area;
 	uint64_t num_areas = SPDK_CEIL_DIV(offset_strips + num_strips, strips_per_area) - offset_areas;
@@ -61,9 +61,8 @@ write_in_rbm_broken_block(struct spdk_bdev_io *bdev_io, struct raid_bdev_io *rai
 	uint64_t num_areas = 0;
 
 	get_io_area_range(bdev_io, raid_io->raid_bdev, &offset_areas, &num_areas);
-
 	for (uint64_t i = offset_areas; i < offset_areas + num_areas; i++) {
-		uint64_t *area = &raid_io->raid_bdev->rebuild.rebuild_matrix[i];
+		uint64_t *area = &raid_io->raid_bdev->rebuild->rebuild_matrix[i];
 		INSERT_BIT(*area, bdev_idx);
 	}
 }
@@ -76,9 +75,8 @@ get_bdev_rebuild_status(struct raid_bdev *raid_bdev, struct spdk_bdev_io *bdev_i
 	uint64_t num_areas = 0;
 
 	get_io_area_range(bdev_io, raid_bdev, &offset_areas, &num_areas);
-
 	for (uint64_t i = offset_areas; i < offset_areas + num_areas; i++) {
-		uint64_t area = raid_bdev->rebuild.rebuild_matrix[i];
+		uint64_t area = raid_bdev->rebuild->rebuild_matrix[i];
 		if (CHECK_BIT(area, bdev_idx)) {
 			return NEED_REBUILD;
 		}
@@ -264,10 +262,21 @@ raid1_submit_rw_request(struct raid_bdev_io *raid_io)
 static void
 init_rebuild(struct raid_bdev *raid_bdev)
 {
-	raid_bdev->rebuild.num_memory_areas = MATRIX_REBUILD_AREAS_IN_USE;
+	raid_bdev->rebuild->num_memory_areas = MATRIX_REBUILD_AREAS_IN_USE;
 	uint64_t stripcnt = SPDK_CEIL_DIV(raid_bdev->bdev.blockcnt, raid_bdev->strip_size);
-	raid_bdev->rebuild.strips_per_area = SPDK_CEIL_DIV(stripcnt, MATRIX_REBUILD_AREAS_IN_USE);
-	raid_bdev->rebuild.rebuild_flag = NOT_NEED_REBUILD;
+	raid_bdev->rebuild->strips_per_area = SPDK_CEIL_DIV(stripcnt, MATRIX_REBUILD_AREAS_IN_USE);
+	raid_bdev->rebuild->rebuild_flag = NOT_NEED_REBUILD;
+}
+
+static void 
+destruct_rebuild(struct raid_bdev *raid_bdev)
+{
+	struct raid_rebuild *r1rebuild = raid_bdev->rebuild;
+
+	if (r1rebuild != NULL)
+	{
+		free(r1rebuild);
+	}
 }
 
 static int
@@ -302,6 +311,8 @@ raid1_stop(struct raid_bdev *raid_bdev)
 	struct raid1_info *r1info = raid_bdev->module_private;
 
 	free(r1info);
+
+	destruct_rebuild(raid_bdev);
 
 	return true;
 }
