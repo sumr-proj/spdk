@@ -42,11 +42,11 @@ extern "C" {
 /* Ceiling division of unsigned integers */
 #define SPDK_CEIL_DIV(x,y) (((x)+(y)-1)/(y))
 
-#define CHECK_BIT(number, shift_size) (number & (1UL << shift_size))
+#define SPDK_TEST_BIT(number_ptr, shift_size) (*(number_ptr) & (1UL << shift_size))
 
-#define INSERT_BIT(number, shift_size) (number |= 1UL << shift_size)
+#define SPDK_SET_BIT(number_ptr, shift_size) (*(number_ptr) |= 1UL << shift_size)
 
-#define KB_TO_BYTES(number) (number << 10)
+#define SPDK_KB_TO_B(number) (number << 10)
 
 /**
  * Macro to align a value to a given power-of-two. The resultant value

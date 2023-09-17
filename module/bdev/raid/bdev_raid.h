@@ -8,17 +8,15 @@
 
 #define MATRIX_REBUILD_SIZE 32768 /* 2^15 */
 
-#define MATRIX_REBUILD_AREAS_IN_USE 2
-
 #include "spdk/bdev_module.h"
 #include "spdk/uuid.h"
 
-enum rebuild_flags {
-	/* if there is no broken area in rbm(rebuild_matrix) */
-	NOT_NEED_REBUILD = 1,
+enum rebuild_flag {
+	/* rebuild flag set during initialization */
+	REBUILD_FLAG_INIT_CONFIGURATION = 0,
 
 	/* if there is at least one broken area in rbm(rebuild_matrix) */
-	NEED_REBUILD = -1,
+	REBUILD_FLAG_NEED_REBUILD = 1,
 };
 
 enum raid_level {
@@ -63,13 +61,13 @@ struct raid_rebuild {
 	uint64_t rebuild_matrix[MATRIX_REBUILD_SIZE];
 
 	/* number of memory areas */
-	uint64_t            num_memory_areas;
+	uint64_t			num_memory_areas;
 
 	/* strip count in one area */
-	uint64_t            strips_per_area;
+	uint64_t			strips_per_area;
 
 	/* rebuild flag */
-	uint8_t				rebuild_flag;
+	uint64_t			rebuild_flag;
 };
 
 /*
@@ -222,7 +220,6 @@ const char *raid_bdev_state_to_str(enum raid_bdev_state state);
 void raid_bdev_write_info_json(struct raid_bdev *raid_bdev, struct spdk_json_write_ctx *w);
 int raid_bdev_remove_base_bdev(struct spdk_bdev *base_bdev, raid_bdev_remove_base_bdev_cb cb_fn,
 			       void *cb_ctx);
-
 
 /*
  * RAID module descriptor
