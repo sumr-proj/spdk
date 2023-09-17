@@ -8,7 +8,6 @@
 #include "spdk/log.h"
 #include "spdk/util.h"
 
-
 struct raid1_info {
 	/* The parent raid bdev */
 	struct raid_bdev *raid_bdev;
@@ -47,7 +46,6 @@ get_io_area_range(struct spdk_bdev_io *bdev_io, struct raid_bdev *raid_bdev, uin
 	uint64_t offset_areas = offset_strips / strips_per_area;
 	uint64_t num_areas = SPDK_CEIL_DIV(offset_strips + num_strips, strips_per_area) - offset_areas;
 
-
 	*offset = offset_areas;
 	*num = num_areas;
 }
@@ -63,12 +61,12 @@ write_in_rbm_broken_block(struct spdk_bdev_io *bdev_io, struct raid_bdev_io *rai
 	get_io_area_range(bdev_io, raid_io->raid_bdev, &offset_areas, &num_areas);
 	for (uint64_t i = offset_areas; i < offset_areas + num_areas; i++) {
 		uint64_t *area = &raid_io->raid_bdev->rebuild->rebuild_matrix[i];
-		INSERT_BIT(*area, bdev_idx);
+		SPDK_SET_BIT(area, bdev_idx);
 	}
 }
 
 /* Determine if a device needs a rebuild or not */
-static int
+static void
 get_bdev_rebuild_status(struct raid_bdev *raid_bdev, struct spdk_bdev_io *bdev_io, uint8_t bdev_idx)
 {
 	uint64_t offset_areas = 0;
@@ -77,11 +75,10 @@ get_bdev_rebuild_status(struct raid_bdev *raid_bdev, struct spdk_bdev_io *bdev_i
 	get_io_area_range(bdev_io, raid_bdev, &offset_areas, &num_areas);
 	for (uint64_t i = offset_areas; i < offset_areas + num_areas; i++) {
 		uint64_t area = raid_bdev->rebuild->rebuild_matrix[i];
-		if (CHECK_BIT(area, bdev_idx)) {
-			return NEED_REBUILD;
+		if (SPDK_TEST_BIT(&area, bdev_idx)) {
+			SPDK_SET_BIT(&(raid_bdev->rebuild->rebuild_flag), REBUILD_FLAG_NEED_REBUILD);
 		}
 	}
-	return NOT_NEED_REBUILD;
 }
 
 static void
@@ -96,7 +93,6 @@ raid1_bdev_io_completion(struct spdk_bdev_io *bdev_io, bool success, void *cb_ar
 
 	if (!success) {
 		write_in_rbm_broken_block(bdev_io, raid_io, bdev_idx);
-
 	}
 
 	raid_bdev_io_complete_part(raid_io, 1, success ?
@@ -139,7 +135,8 @@ raid1_submit_read_request(struct raid_bdev_io *raid_io)
 	RAID_FOR_EACH_BASE_BDEV(raid_bdev, base_info) {
 		base_ch = raid_io->raid_ch->base_channel[idx];
 		if (base_ch != NULL) {
-			if (get_bdev_rebuild_status(raid_bdev, bdev_io, idx) == NOT_NEED_REBUILD) {
+			get_bdev_rebuild_status(raid_bdev, bdev_io, idx);
+			if (raid_bdev->rebuild->rebuild_flag != REBUILD_FLAG_INIT_CONFIGURATION) {
 				break;
 			}
 			base_ch = NULL;
@@ -262,20 +259,20 @@ raid1_submit_rw_request(struct raid_bdev_io *raid_io)
 static void
 init_rebuild(struct raid_bdev *raid_bdev)
 {
-	raid_bdev->rebuild->num_memory_areas = MATRIX_REBUILD_AREAS_IN_USE;
+	raid_bdev->rebuild->num_memory_areas = MATRIX_REBUILD_SIZE;
 	uint64_t stripcnt = SPDK_CEIL_DIV(raid_bdev->bdev.blockcnt, raid_bdev->strip_size);
-	raid_bdev->rebuild->strips_per_area = SPDK_CEIL_DIV(stripcnt, MATRIX_REBUILD_AREAS_IN_USE);
-	raid_bdev->rebuild->rebuild_flag = NOT_NEED_REBUILD;
+	raid_bdev->rebuild->strips_per_area = SPDK_CEIL_DIV(stripcnt, MATRIX_REBUILD_SIZE);
+	raid_bdev->rebuild->rebuild_flag = REBUILD_FLAG_INIT_CONFIGURATION;
 }
 
-static void 
+static void
 destruct_rebuild(struct raid_bdev *raid_bdev)
 {
 	struct raid_rebuild *r1rebuild = raid_bdev->rebuild;
 
-	if (r1rebuild != NULL)
-	{
+	if (r1rebuild != NULL) {
 		free(r1rebuild);
+		raid_bdev->rebuild = NULL;
 	}
 }
 
@@ -288,7 +285,7 @@ raid1_start(struct raid_bdev *raid_bdev)
 
 	r1info = calloc(1, sizeof(*r1info));
 	if (!r1info) {
-		SPDK_NOTICELOG("Failed to allocate RAID1 info device structure\n");
+		SPDK_ERRLOG("Failed to allocate RAID1 info device structure\n");
 		return -ENOMEM;
 	}
 	r1info->raid_bdev = raid_bdev;

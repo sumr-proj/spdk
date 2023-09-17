@@ -1003,7 +1003,7 @@ raid_bdev_create(const char *name, uint32_t strip_size, uint8_t num_base_bdevs,
 		SPDK_ERRLOG("Unable to allocate memory for raid bdev\n");
 		return -ENOMEM;
 	}
-	
+
 	/* allocate rebuild struct  */
 	raid_bdev->rebuild = calloc(1, sizeof(struct raid_rebuild));
 	if (!raid_bdev->rebuild) {
