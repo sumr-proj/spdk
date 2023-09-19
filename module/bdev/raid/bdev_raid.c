@@ -1539,23 +1539,28 @@ raid_bdev_configure_base_bdev(struct raid_base_bdev_info *base_info)
 
 	SPDK_DEBUGLOG(bdev_raid, "bdev %s is claimed\n", bdev->name);
 
-	assert(raid_bdev->state == RAID_BDEV_STATE_ONLINE || raid_bdev->state == RAID_BDEV_STATE_CONFIGURING);
-
 	base_info->desc = desc;
 	raid_bdev->num_base_bdevs_discovered++;
 	assert(raid_bdev->num_base_bdevs_discovered <= raid_bdev->num_base_bdevs);
 
-	if (raid_bdev->state == RAID_BDEV_STATE_ONLINE) {
-		bdev->blockcnt = base_info->blockcnt;
-	} else {
-		base_info->blockcnt = bdev->blockcnt;
-		if (raid_bdev->num_base_bdevs_discovered == raid_bdev->num_base_bdevs) {
-			rc = raid_bdev_configure(raid_bdev);
-			if (rc != 0) {
-				SPDK_ERRLOG("Failed to configure raid bdev\n");
-				return rc;
+	switch (raid_bdev->state) {
+		case RAID_BDEV_STATE_ONLINE:
+			bdev->blockcnt = base_info->blockcnt;
+			break;
+		case RAID_BDEV_STATE_CONFIGURING:
+			base_info->blockcnt = bdev->blockcnt;
+			if (raid_bdev->num_base_bdevs_discovered == raid_bdev->num_base_bdevs) {
+				rc = raid_bdev_configure(raid_bdev);
+				if (rc != 0) {
+					SPDK_ERRLOG("Failed to configure raid bdev\n");
+					return rc;
+				}
 			}
-		}
+			break;
+		case RAID_BDEV_STATE_OFFLINE:
+			/* TODO when OFFLINE state is completely implemented */
+		default:
+			SPDK_ERRLOG("unexpected bdev raid state when adding '%s' base bdev", base_info->name);
 	}
 
 	return 0;
@@ -1628,7 +1633,7 @@ raid_bdev_add_base_bdev(struct raid_bdev *raid_bdev, char *base_bdev_name, uint8
 		SPDK_ERRLOG("Blocklen of the bdev %s not matching with other base bdevs\n", base_bdev_name);
 		return -EINVAL;
 	}
-	
+
 	if (bdev->blockcnt < raid_bdev->bdev.blockcnt) {
 		SPDK_ERRLOG("The bdev %s size is too small\n", base_bdev_name);
 		return -EINVAL;
