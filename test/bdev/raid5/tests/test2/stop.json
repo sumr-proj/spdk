@@ -1,75 +1,75 @@
 {
-    "subsystems": [
-      {
-        "subsystem": "bdev",
-        "config": [ 
-          {
-            "params": {
-              "name": "Raid5"
-            },
-            "method": "bdev_raid_delete"
+  "subsystems": [
+    {
+      "subsystem": "bdev",
+      "config": [ 
+        {
+          "params": {
+            "name": "Raid5"
           },
-          {
-            "params": {
-              "name": "Malloc0"
-            },
-            "method": "bdev_malloc_delete"
+          "method": "bdev_raid_delete"
+        },
+        {
+          "params": {
+            "name": "Malloc0"
           },
-          {
-            "params": {
-              "name": "Malloc2"
-            },
-            "method": "bdev_malloc_delete"
+          "method": "bdev_malloc_delete"
+        },
+        {
+          "params": {
+            "name": "Malloc2"
           },
-          {
-            "params": {
-              "name": "Malloc3"
-            },
-            "method": "bdev_malloc_delete"
+          "method": "bdev_malloc_delete"
+        },
+        {
+          "params": {
+            "name": "Malloc3"
           },
-          {
-            "params": {
-              "name": "Malloc4"
-            },
-            "method": "bdev_malloc_delete"
+          "method": "bdev_malloc_delete"
+        },
+        {
+          "params": {
+            "name": "Malloc4"
           },
-          {
-            "params": {
-              "name": "Malloc5"
-            },
-            "method": "bdev_malloc_delete"
+          "method": "bdev_malloc_delete"
+        },
+        {
+          "params": {
+            "name": "Malloc5"
           },
-          {
-            "params": {
-              "name": "Malloc6"
-            },
-            "method": "bdev_malloc_delete"
+          "method": "bdev_malloc_delete"
+        },
+        {
+          "params": {
+            "name": "Malloc6"
           },
-          {
-            "params": {
-              "name": "Malloc7"
-            },
-            "method": "bdev_malloc_delete"
+          "method": "bdev_malloc_delete"
+        },
+        {
+          "params": {
+            "name": "Malloc7"
           },
-          {
-            "params": {
-              "name": "Malloc8"
-            },
-            "method": "bdev_malloc_delete"
+          "method": "bdev_malloc_delete"
+        },
+        {
+          "params": {
+            "name": "Malloc8"
           },
-          {
-            "params": {
-              "name": "Malloc9"
-            },
-            "method": "bdev_malloc_delete"
+          "method": "bdev_malloc_delete"
+        },
+        {
+          "params": {
+            "name": "Malloc9"
           },
-          {
-            "params": {
-              "name": "Malloc10"
-            },
-            "method": "bdev_malloc_delete"
-          }
-        ]
-      }
-    ]
-  }
+          "method": "bdev_malloc_delete"
+        },
+        {
+          "params": {
+            "name": "Malloc10"
+          },
+          "method": "bdev_malloc_delete"
+        }
+      ]
+    }
+  ]
+}

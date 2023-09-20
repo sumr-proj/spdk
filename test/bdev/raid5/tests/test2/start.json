@@ -1,118 +1,118 @@
 {
-    "subsystems": [
-      {
-        "subsystem": "bdev",
-        "config": [
-          {
-            "params": {
-              "block_size": 4096,
-              "num_blocks": 32,
-              "name": "Malloc0"
-            },
-            "method": "bdev_malloc_create"
+  "subsystems": [
+    {
+      "subsystem": "bdev",
+      "config": [
+        {
+          "params": {
+            "block_size": 4096,
+            "num_blocks": 32,
+            "name": "Malloc0"
           },
-          {
-            "params": {
-              "block_size": 4096,
-              "num_blocks": 32,
-              "name": "Malloc1"
-            },
-            "method": "bdev_malloc_create"
+          "method": "bdev_malloc_create"
+        },
+        {
+          "params": {
+            "block_size": 4096,
+            "num_blocks": 32,
+            "name": "Malloc1"
           },
-          {
-            "params": {
-              "block_size": 4096,
-              "num_blocks": 32,
-              "name": "Malloc2"
-            },
-            "method": "bdev_malloc_create"
+          "method": "bdev_malloc_create"
+        },
+        {
+          "params": {
+            "block_size": 4096,
+            "num_blocks": 32,
+            "name": "Malloc2"
           },
-          {
-            "params": {
-              "block_size": 4096,
-              "num_blocks": 32,
-              "name": "Malloc3"
-            },
-            "method": "bdev_malloc_create"
+          "method": "bdev_malloc_create"
+        },
+        {
+          "params": {
+            "block_size": 4096,
+            "num_blocks": 32,
+            "name": "Malloc3"
           },
-          {
-            "params": {
-              "block_size": 4096,
-              "num_blocks": 32,
-              "name": "Malloc4"
-            },
-            "method": "bdev_malloc_create"
+          "method": "bdev_malloc_create"
+        },
+        {
+          "params": {
+            "block_size": 4096,
+            "num_blocks": 32,
+            "name": "Malloc4"
           },
-          {
-            "params": {
-              "block_size": 4096,
-              "num_blocks": 32,
-              "name": "Malloc5"
-            },
-            "method": "bdev_malloc_create"
+          "method": "bdev_malloc_create"
+        },
+        {
+          "params": {
+            "block_size": 4096,
+            "num_blocks": 32,
+            "name": "Malloc5"
           },
-          {
-            "params": {
-              "block_size": 4096,
-              "num_blocks": 32,
-              "name": "Malloc6"
-            },
-            "method": "bdev_malloc_create"
+          "method": "bdev_malloc_create"
+        },
+        {
+          "params": {
+            "block_size": 4096,
+            "num_blocks": 32,
+            "name": "Malloc6"
           },
-          {
-            "params": {
-              "block_size": 4096,
-              "num_blocks": 32,
-              "name": "Malloc7"
-            },
-            "method": "bdev_malloc_create"
+          "method": "bdev_malloc_create"
+        },
+        {
+          "params": {
+            "block_size": 4096,
+            "num_blocks": 32,
+            "name": "Malloc7"
           },
-          {
-            "params": {
-              "block_size": 4096,
-              "num_blocks": 32,
-              "name": "Malloc8"
-            },
-            "method": "bdev_malloc_create"
+          "method": "bdev_malloc_create"
+        },
+        {
+          "params": {
+            "block_size": 4096,
+            "num_blocks": 32,
+            "name": "Malloc8"
           },
-          {
-            "params": {
-              "block_size": 4096,
-              "num_blocks": 32,
-              "name": "Malloc9"
-            },
-            "method": "bdev_malloc_create"
+          "method": "bdev_malloc_create"
+        },
+        {
+          "params": {
+            "block_size": 4096,
+            "num_blocks": 32,
+            "name": "Malloc9"
           },
-          {
-            "params": {
-              "block_size": 4096,
-              "num_blocks": 32,
-              "name": "Malloc10"
-            },
-            "method": "bdev_malloc_create"
+          "method": "bdev_malloc_create"
+        },
+        {
+          "params": {
+            "block_size": 4096,
+            "num_blocks": 32,
+            "name": "Malloc10"
           },
-          {
-            "params": {
-              "name": "Raid5",
-              "raid_level": "5",
-              "strip_size_kb": 16,
-              "base_bdevs": [
-                "Malloc0",
-                "Malloc1",
-                "Malloc2",
-                "Malloc3",
-                "Malloc4",
-                "Malloc5",
-                "Malloc6",
-                "Malloc7",
-                "Malloc8",
-                "Malloc9",
-                "Malloc10"
-              ]
-            },
-            "method": "bdev_raid_create"
-          }
-        ]
-      }
-    ]
-  }
+          "method": "bdev_malloc_create"
+        },
+        {
+          "params": {
+            "name": "Raid5",
+            "raid_level": "5",
+            "strip_size_kb": 16,
+            "base_bdevs": [
+              "Malloc0",
+              "Malloc1",
+              "Malloc2",
+              "Malloc3",
+              "Malloc4",
+              "Malloc5",
+              "Malloc6",
+              "Malloc7",
+              "Malloc8",
+              "Malloc9",
+              "Malloc10"
+            ]
+          },
+          "method": "bdev_raid_create"
+        }
+      ]
+    }
+  ]
+}

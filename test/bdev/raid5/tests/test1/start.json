@@ -1,55 +1,55 @@
 {
-    "subsystems": [
-      {
-        "subsystem": "bdev",
-        "config": [
-          {
-            "params": {
-              "block_size": 4096,
-              "num_blocks": 16,
-              "name": "Malloc0"
-            },
-            "method": "bdev_malloc_create"
+  "subsystems": [
+    {
+      "subsystem": "bdev",
+      "config": [
+        {
+          "params": {
+            "block_size": 4096,
+            "num_blocks": 16,
+            "name": "Malloc0"
           },
-          {
-            "params": {
-              "block_size": 4096,
-              "num_blocks": 16,
-              "name": "Malloc1"
-            },
-            "method": "bdev_malloc_create"
+          "method": "bdev_malloc_create"
+        },
+        {
+          "params": {
+            "block_size": 4096,
+            "num_blocks": 16,
+            "name": "Malloc1"
           },
-          {
-            "params": {
-              "block_size": 4096,
-              "num_blocks": 16,
-              "name": "Malloc2"
-            },
-            "method": "bdev_malloc_create"
+          "method": "bdev_malloc_create"
+        },
+        {
+          "params": {
+            "block_size": 4096,
+            "num_blocks": 16,
+            "name": "Malloc2"
           },
-          {
-            "params": {
-              "block_size": 4096,
-              "num_blocks": 16,
-              "name": "Malloc3"
-            },
-            "method": "bdev_malloc_create"
+          "method": "bdev_malloc_create"
+        },
+        {
+          "params": {
+            "block_size": 4096,
+            "num_blocks": 16,
+            "name": "Malloc3"
           },
-          {
-            "params": {
-              "name": "Raid5",
-              "raid_level": "5",
-              "strip_size_kb": 8,
-              "base_bdevs": [
-                "Malloc0",
-                "Malloc1",
-                "Malloc2",
-                "Malloc3"
-              ]
-            },
-            "method": "bdev_raid_create"
-          }
-        ]
-      }
-    ]
-  }
+          "method": "bdev_malloc_create"
+        },
+        {
+          "params": {
+            "name": "Raid5",
+            "raid_level": "5",
+            "strip_size_kb": 8,
+            "base_bdevs": [
+              "Malloc0",
+              "Malloc1",
+              "Malloc2",
+              "Malloc3"
+            ]
+          },
+          "method": "bdev_raid_create"
+        }
+      ]
+    }
+  ]
+}
