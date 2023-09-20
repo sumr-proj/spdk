@@ -103,7 +103,7 @@ function run_test_with_fio() {
 }
 
 function run_tests() {
-    local dir_sample=$(pwd)/tests/test;
+    local dir_sample=$spdk/test/bdev/raid5/tests/test;
     local state=0;
     local res;
     echo -e "\033[34mtest with using fio results\033[0m";
