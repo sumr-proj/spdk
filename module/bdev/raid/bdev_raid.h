@@ -254,7 +254,7 @@ struct raid_bdev_module {
 	 * is satisfied.
 	 */
 	void (*resize)(struct raid_bdev *raid_bdev);
-	
+
 	TAILQ_ENTRY(raid_bdev_module) link;
 };
 
