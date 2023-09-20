@@ -12,7 +12,7 @@
 
 # exit codes:
 # 1 - path to spdk isn't entered
-# 2 - spdk_tgt does't start
+# 2 - ublk target isn't created
 
 spdk=$1
 
@@ -27,6 +27,11 @@ function start() {
     start-stop-daemon -Sbv -n spdk_tgt -x $spdk/build/bin/spdk_tgt;
     sleep 5;
     ./scripts/rpc.py ublk_create_target;
+    if [[ "$?" != "0" ]]; then
+        start-stop-daemon -Kvx $spdk/build/bin/spdk_tgt;
+        cd $old_dir;
+        exit 2;
+    fi
 
     cd $old_dir;
 }
