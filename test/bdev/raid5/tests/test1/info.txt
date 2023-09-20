@@ -1,0 +1,4 @@
+1:
+    num base bdevs: 4
+    strip size: 8KB
+    total size: 192KB

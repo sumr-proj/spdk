@@ -1,0 +1,33 @@
+{
+    "subsystems": [
+      {
+        "subsystem": "bdev",
+        "config": [ 
+          {
+            "params": {
+              "name": "Raid5"
+            },
+            "method": "bdev_raid_delete"
+          },
+          {
+            "params": {
+              "name": "Malloc0"
+            },
+            "method": "bdev_malloc_delete"
+          },
+          {
+            "params": {
+              "name": "Malloc2"
+            },
+            "method": "bdev_malloc_delete"
+          },
+          {
+            "params": {
+              "name": "Malloc3"
+            },
+            "method": "bdev_malloc_delete"
+          }
+        ]
+      }
+    ]
+  }

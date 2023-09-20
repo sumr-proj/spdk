@@ -1,0 +1,12 @@
+[global]
+thread=1
+group_reporting=1
+verify=md5
+size=128K
+iodepth=1
+rw=write
+bs=8K
+
+[test]
+filename=/dev/ublkb1
+numjobs=1
