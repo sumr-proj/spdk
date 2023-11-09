@@ -1092,9 +1092,10 @@ static int
 raid5_start(struct raid_bdev *raid_bdev)
 {
 	struct raid5_info *r5_info;
+	uint32_t logic_stripe_size = raid_bdev->strip_size * (raid_bdev->num_base_bdevs - 1);
 
 	raid_bdev->bdev.blockcnt = raid5_calculate_blockcnt(raid_bdev);
-	raid_bdev->bdev.optimal_io_boundary = raid_bdev->strip_size;
+	raid_bdev->bdev.optimal_io_boundary = logic_stripe_size;
 	raid_bdev->bdev.split_on_optimal_io_boundary = true;
 	raid_bdev->min_base_bdevs_operational = raid_bdev->num_base_bdevs - 1;
 
