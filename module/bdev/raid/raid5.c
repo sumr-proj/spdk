@@ -185,7 +185,7 @@ raid5_fill_iovs_with_zeroes(struct iovec *iovs, int iovcnt)
 	}
 }
 
-void
+static void
 raid5_queue_io_wait(struct raid_bdev_io *raid_io, struct spdk_bdev *bdev,
 		struct spdk_io_channel *ch, spdk_bdev_io_wait_cb cb_fn, void *cb_arg)
 {
