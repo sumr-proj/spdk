@@ -13,6 +13,17 @@
 #include "lib/thread/thread_internal.h"
 
 #include "spdk/log.h"
+#include "spdk/likely.h"
+
+enum raid5_rw_type {
+	UNDEFINED = 0,
+	READ_MODIFY_WRITE = 1,
+	DEFAULT = 2
+};
+
+struct raid5_info {
+	enum raid5_rw_type rw_type;
+};
 
 struct raid5_io_buffer {
 	struct raid_bdev_io *raid_io;
@@ -895,6 +906,167 @@ raid5_submit_rw_request(struct raid_bdev_io *raid_io)
 	}
 }
 
+static bool
+raid5_wz_req_complete_part_final(struct raid_bdev_io *raid_io, uint64_t completed,
+			   enum spdk_bdev_io_status status)
+{
+	assert(raid_io->base_bdev_io_remaining >= completed);
+	raid_io->base_bdev_io_remaining -= completed;
+
+	if (status != SPDK_BDEV_IO_STATUS_SUCCESS) {
+		raid_io->base_bdev_io_status = status;
+	}
+
+	if (raid_io->base_bdev_io_remaining == 0) {
+		struct raid5_info *r0_info = raid_io->raid_bdev->module_private;
+
+		if (raid_io->base_bdev_io_status == SPDK_BDEV_IO_STATUS_SUCCESS) {
+			r0_info->rw_type = READ_MODIFY_WRITE;
+			SPDK_NOTICELOG("raid5 rw_type: READ_MODIFY_WRITE\n");
+		} else {
+			r0_info->rw_type = DEFAULT;
+			SPDK_NOTICELOG("raid5 rw_type: DEFAULT\n");
+		}
+
+		raid_bdev_destroy_cb(raid_io->raid_bdev, raid_io->raid_ch);
+		free(raid_io->raid_ch);
+		free(raid_io);
+		return true;
+	} else {
+		return false;
+	}
+}
+
+static void
+raid5_wz_req_complete_part(struct spdk_bdev_io *bdev_io, bool success, void *cb_arg) {
+	struct raid_bdev_io *raid_io = cb_arg;
+	
+	spdk_bdev_free_io(bdev_io);
+
+	raid5_wz_req_complete_part_final(raid_io, 1, success ?
+					SPDK_BDEV_IO_STATUS_SUCCESS :
+					SPDK_BDEV_IO_STATUS_FAILED);
+}
+
+static int
+raid5_submit_write_zeroes_request(struct raid_bdev_io *raid_io);
+
+static void
+_raid5_submit_write_zeroes_request(void *_raid_io)
+{
+	struct raid_bdev_io *raid_io = _raid_io;
+
+	raid5_submit_write_zeroes_request(raid_io);
+}
+
+static int
+raid5_submit_write_zeroes_request(struct raid_bdev_io *raid_io) {
+	struct raid_bdev *raid_bdev = raid_io->raid_bdev;
+	struct raid_base_bdev_info *base_info;
+	struct spdk_io_channel *base_ch;
+	uint64_t num_blocks = raid_bdev->bdev.blockcnt / (raid_bdev->num_base_bdevs - 1);
+	uint64_t base_bdev_io_not_submitted;
+	int ret = 0;
+
+	if (raid_io->base_bdev_io_submitted == 0) {
+		raid_io->base_bdev_io_remaining = raid_bdev->num_base_bdevs;
+	}
+
+	for (uint8_t idx = raid_io->base_bdev_io_submitted; idx < raid_bdev->num_base_bdevs; ++idx) {
+		base_info = &raid_bdev->base_bdev_info[idx];
+		base_ch = raid_io->raid_ch->base_channel[idx];
+
+		if (base_ch == NULL) {
+			raid_io->base_bdev_io_submitted++;
+			raid5_wz_req_complete_part_final(raid_io, 1, SPDK_BDEV_IO_STATUS_SUCCESS);
+			continue;
+		}
+		
+		ret = spdk_bdev_write_zeroes_blocks(base_info->desc, base_ch,
+							0, num_blocks,
+							raid5_wz_req_complete_part, raid_io);
+		if (spdk_unlikely(ret != 0)) {
+			if (spdk_unlikely(ret == -ENOMEM)) {
+				raid_bdev_queue_io_wait(raid_io, spdk_bdev_desc_get_bdev(base_info->desc),
+							base_ch, _raid5_submit_write_zeroes_request);
+				return 0;
+			}
+
+			base_bdev_io_not_submitted = raid_bdev->num_base_bdevs -
+							raid_io->base_bdev_io_submitted;
+			raid5_wz_req_complete_part_final(raid_io,
+							base_bdev_io_not_submitted,
+							SPDK_BDEV_IO_STATUS_FAILED);
+			return 0;
+		}
+
+		raid_io->base_bdev_io_submitted++;
+	}
+
+	if (raid_io->base_bdev_io_submitted == 0) {
+		ret = -ENODEV;
+	}
+	return ret;
+}
+
+static void
+raid5_set_rw_type(struct raid_bdev *raid_bdev)
+{
+	struct spdk_bdev_desc *desc;
+	struct spdk_bdev *base_bdev;
+	struct raid_bdev_io *raid_io;
+	struct raid5_info *r5_info = raid_bdev->module_private;
+	int ret;
+
+	r5_info->rw_type = UNDEFINED;
+
+	for (uint8_t idx = 0; idx < raid_bdev->num_base_bdevs; ++idx) {
+		desc = raid_bdev->base_bdev_info[idx].desc;
+		if (desc != NULL) {
+			base_bdev = spdk_bdev_desc_get_bdev(desc);
+			if (!base_bdev->fn_table->io_type_supported(base_bdev->ctxt,
+								SPDK_BDEV_IO_TYPE_WRITE_ZEROES)) {
+				r5_info->rw_type = DEFAULT;
+				return;
+			}
+		}
+	}
+	
+	raid_io = calloc(1, sizeof(struct raid_bdev_io));
+	if (raid_io == NULL) {
+		r5_info->rw_type = DEFAULT;
+		return;
+	}
+	
+	raid_io->raid_bdev = raid_bdev;
+	raid_io->base_bdev_io_remaining = 0;
+	raid_io->base_bdev_io_submitted = 0;
+	raid_io->base_bdev_io_status = SPDK_BDEV_IO_STATUS_SUCCESS;
+	raid_io->raid_ch = calloc(1, sizeof(struct raid_bdev_io_channel));
+	if (raid_io->raid_ch == NULL) {
+		free(raid_io);
+		r5_info->rw_type = DEFAULT;
+		return;
+	}
+
+	ret = raid_bdev_create_cb(raid_bdev, raid_io->raid_ch);
+	if (ret != 0) {
+		free(raid_io->raid_ch);
+		free(raid_io);
+		r5_info->rw_type = DEFAULT;
+		return;
+	}
+
+	ret = raid5_submit_write_zeroes_request(raid_io);
+	if (spdk_unlikely(ret != 0)) {
+		raid_bdev_destroy_cb(raid_bdev, raid_io->raid_ch);
+		free(raid_io->raid_ch);
+		free(raid_io);
+		r5_info->rw_type = DEFAULT;
+		return;
+	}
+}
+
 static uint64_t
 raid5_calculate_blockcnt(struct raid_bdev *raid_bdev)
 {
@@ -919,10 +1091,18 @@ raid5_calculate_blockcnt(struct raid_bdev *raid_bdev)
 static int
 raid5_start(struct raid_bdev *raid_bdev)
 {
+	struct raid5_info *r5_info;
+
 	raid_bdev->bdev.blockcnt = raid5_calculate_blockcnt(raid_bdev);
 	raid_bdev->bdev.optimal_io_boundary = raid_bdev->strip_size;
 	raid_bdev->bdev.split_on_optimal_io_boundary = true;
 	raid_bdev->min_base_bdevs_operational = raid_bdev->num_base_bdevs - 1;
+
+	r5_info = calloc(1, (sizeof(struct raid5_info)));
+	assert(r5_info != NULL);
+	raid_bdev->module_private = r5_info;
+
+	raid5_set_rw_type(raid_bdev);
 
 	return 0;
 }
