@@ -25,6 +25,18 @@ struct raid5_info {
 	enum raid5_write_type write_type;
 };
 
+struct raid5_stripe_request {
+	struct raid_bdev_io *raid_io;
+
+	struct iovec **strip_buffs;
+
+	int* strip_buffs_cnts;
+
+	int strip_buffs_cnt;
+
+	int broken_strip_idx;
+};
+
 struct raid5_io_buffer {
 	struct raid_bdev_io *raid_io;
 
