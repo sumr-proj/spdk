@@ -535,6 +535,44 @@ raid5_free_stripe_request(struct raid5_stripe_request *request) {
 	free(request);
 }
 
+static int
+raid5_get_strips_buffs_until(struct raid5_stripe_request *request,
+				uint8_t start_idx, uint8_t until_idx, uint64_t num_blcks)
+{
+	struct raid_bdev *raid_bdev = request->raid_io->raid_bdev;
+	uint64_t block_size_b = ((uint64_t)1024 * raid_bdev->strip_size_kb) / raid_bdev->strip_size;
+
+	SPDK_ERRLOG("raid5_get_strips_buffs_until\n");
+
+	for (uint8_t idx = start_idx; idx != until_idx; idx = raid5_next_idx(idx, raid_bdev)) {
+		request->strip_buffs_cnts[idx] = 1;
+		request->strip_buffs[idx] = raid5_get_buffer(num_blcks * block_size_b);
+		if (request->strip_buffs[idx] == NULL) {
+			for (uint8_t i = start_idx; i != idx; i = raid5_next_idx(i, raid_bdev)) {
+				raid5_free_buffer(request->strip_buffs[i]);
+				request->strip_buffs_cnts[i] = 0;
+			}
+			request->strip_buffs_cnts[idx] = 0;
+			return -ENOMEM;
+		}
+	}
+	return 0;
+}
+
+static void
+raid5_free_strips_buffs_until(struct raid5_stripe_request *request,
+				uint8_t start_idx, uint8_t until_idx)
+{
+	struct raid_bdev *raid_bdev = request->raid_io->raid_bdev;
+
+	SPDK_ERRLOG("raid5_free_strips_buffs_until\n");
+
+	for (uint8_t idx = start_idx; idx != until_idx; idx = raid5_next_idx(idx, raid_bdev)) {
+		raid5_free_buffer(request->strip_buffs[idx]);
+		request->strip_buffs_cnts[idx] = 0;
+	}
+}
+
 static void raid5_submit_rw_request(struct raid_bdev_io *raid_io);
 
 static void
