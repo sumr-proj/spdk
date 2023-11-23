@@ -499,6 +499,42 @@ raid5_xor_iovs_with_iovs(struct iovec *xor_iovs, int xor_iovcnt, uint64_t xor_of
 	}	
 }
 
+static struct raid5_stripe_request *
+raid5_get_stripe_request(struct raid_bdev_io *raid_io)
+{
+	struct raid5_stripe_request *request;
+
+	request = calloc(1, sizeof(struct raid5_stripe_request));
+	if (request == NULL) {
+		return NULL;
+	}
+
+	request->raid_io = raid_io;
+	request->strip_buffs_cnt = raid_io->raid_bdev->num_base_bdevs;
+	request->broken_strip_idx = raid_io->raid_bdev->num_base_bdevs;
+	request->strip_buffs = calloc(request->strip_buffs_cnt, sizeof(struct iovec *));
+	if (request->strip_buffs == NULL) {
+		free(request);
+		return NULL;
+	}
+
+	request->strip_buffs_cnts = calloc(request->strip_buffs_cnt, sizeof(int));
+	if (request->strip_buffs_cnts == NULL) {
+		free(request->strip_buffs);
+		free(request);
+		return NULL;
+	}
+
+	return request;
+}
+
+static void
+raid5_free_stripe_request(struct raid5_stripe_request *request) {
+	free(request->strip_buffs_cnts);
+	free(request->strip_buffs);
+	free(request);
+}
+
 static void raid5_submit_rw_request(struct raid_bdev_io *raid_io);
 
 static void
