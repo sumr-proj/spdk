@@ -659,6 +659,35 @@ raid5_free_req_strips_iovs_until(struct raid5_stripe_request *request,
 	}
 }
 
+static int
+raid5_read_req_strips_set_strip_buffs(struct raid5_stripe_request *request)
+{
+	struct spdk_bdev_io			*bdev_io = spdk_bdev_io_from_ctx(request->raid_io);
+	struct raid_bdev			*raid_bdev = request->raid_io->raid_bdev;
+	uint64_t			ststrip_idx = raid5_start_strip_idx(bdev_io, raid_bdev);
+	uint8_t				after_estrip_idx = raid5_next_idx(raid5_end_strip_idx(bdev_io, raid_bdev), raid_bdev);
+	uint64_t			remaining_len = bdev_io->u.bdev.iovs[0].iov_len;
+	int			iov_idx = 0;
+
+	SPDK_ERRLOG("raid5_read_req_strips_set_strip_buffs\n");
+
+	return raid5_set_req_strips_iovs_until(request, ststrip_idx, after_estrip_idx, &iov_idx, &remaining_len);
+}
+
+static void
+raid5_read_req_strips_free_strip_buffs(struct raid5_stripe_request *request)
+{
+	struct raid_bdev_io 		*raid_io = request->raid_io;
+	struct spdk_bdev_io			*bdev_io = spdk_bdev_io_from_ctx(raid_io);
+	struct raid_bdev			*raid_bdev = raid_io->raid_bdev;
+	uint8_t			ststrip_idx = raid5_start_strip_idx(bdev_io, raid_bdev);
+	uint8_t				after_estrip_idx = raid5_next_idx(raid5_end_strip_idx(bdev_io, raid_bdev), raid_bdev);
+
+	SPDK_ERRLOG("raid5_read_req_strips_free_strip_buffs\n");
+
+	raid5_free_req_strips_iovs_until(request, ststrip_idx, after_estrip_idx);
+}
+
 static void raid5_submit_rw_request(struct raid_bdev_io *raid_io);
 
 static void
