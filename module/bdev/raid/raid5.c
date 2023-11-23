@@ -1968,7 +1968,7 @@ raid5_resize(struct raid_bdev *raid_bdev)
 static struct raid_bdev_module g_raid5_module = {
 	.level = RAID5,
 	.base_bdevs_min = 3,
-	.memory_domains_supported = true,
+	.memory_domains_supported = false,
 	.start = raid5_start,
 	.submit_rw_request = raid5_submit_rw_request,
 	.resize = raid5_resize
