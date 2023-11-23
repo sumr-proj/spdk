@@ -573,6 +573,92 @@ raid5_free_strips_buffs_until(struct raid5_stripe_request *request,
 	}
 }
 
+static int
+raid5_set_req_strips_iovs_until(struct raid5_stripe_request *request,
+				uint8_t start_idx, uint8_t until_idx,
+				int *iov_idx, uint64_t *remaining_len)
+{
+	struct raid_bdev_io 		*raid_io = request->raid_io;
+	struct spdk_bdev_io			*bdev_io = spdk_bdev_io_from_ctx(raid_io);
+	struct raid_bdev			*raid_bdev = raid_io->raid_bdev;
+	uint64_t			num_blcks;
+	uint64_t			len;
+	uint64_t			block_size_b = ((uint64_t)1024 * raid_bdev->strip_size_kb) / raid_bdev->strip_size;
+	uint64_t			*iov_base_b8;
+	int			end_iov_idx;
+
+	SPDK_ERRLOG("raid5_set_req_strips_iovs_until\n");
+
+	for (uint8_t idx = start_idx; idx != until_idx; idx = raid5_next_idx(idx, raid_bdev)) {
+		num_blcks = raid5_num_blcks(bdev_io, raid_bdev, idx);
+		end_iov_idx = *iov_idx;
+		len = *remaining_len;
+
+		while ((len / block_size_b) < num_blcks) {
+			++end_iov_idx;
+			len += bdev_io->u.bdev.iovs[end_iov_idx].iov_len;
+		}
+
+		len = num_blcks * block_size_b;
+
+		request->strip_buffs_cnts[idx] = end_iov_idx - *iov_idx + 1;
+		request->strip_buffs[idx] = calloc(request->strip_buffs_cnts[idx], sizeof(struct iovec));
+		if (request->strip_buffs[idx] == NULL) {
+			for (uint8_t i = start_idx; i != idx; i = raid5_next_idx(i, raid_bdev)) {
+				free(request->strip_buffs[i]);
+				request->strip_buffs_cnts[i] = 0;
+			}
+			request->strip_buffs_cnts[idx] = 0;
+			return -ENOMEM;
+		}
+		
+		iov_base_b8 = bdev_io->u.bdev.iovs[*iov_idx].iov_base;
+		request->strip_buffs[idx][0].iov_base =
+				&iov_base_b8[(bdev_io->u.bdev.iovs[*iov_idx].iov_len - *remaining_len) / 8];
+		if (*remaining_len >= num_blcks * block_size_b) {
+			request->strip_buffs[idx][0].iov_len = num_blcks * block_size_b;
+			len -= num_blcks * block_size_b;
+			*remaining_len -= num_blcks * block_size_b;
+		} else {
+			request->strip_buffs[idx][0].iov_len = *remaining_len;
+			len -= *remaining_len;
+			for (uint8_t i = *iov_idx + 1; i < end_iov_idx; ++i) {
+				request->strip_buffs[idx][i - *iov_idx].iov_base = bdev_io->u.bdev.iovs[i].iov_base;
+				request->strip_buffs[idx][i - *iov_idx].iov_len = bdev_io->u.bdev.iovs[i].iov_len;
+				len -= request->strip_buffs[idx][i - *iov_idx].iov_len;
+			}
+			request->strip_buffs[idx][request->strip_buffs_cnts[idx] - 1].iov_base =
+					bdev_io->u.bdev.iovs[end_iov_idx].iov_base;
+			request->strip_buffs[idx][request->strip_buffs_cnts[idx] - 1].iov_len = len;
+			*remaining_len = bdev_io->u.bdev.iovs[end_iov_idx].iov_len - len;
+			*iov_idx = end_iov_idx;
+		}
+
+		if (*remaining_len == 0) {
+			++(*iov_idx);
+			if (*iov_idx < bdev_io->u.bdev.iovcnt) {
+				*remaining_len = bdev_io->u.bdev.iovs[*iov_idx].iov_len;
+			}
+		}
+	}
+	return 0;	
+}
+
+static void
+raid5_free_req_strips_iovs_until(struct raid5_stripe_request *request,
+				uint8_t start_idx, uint8_t until_idx)
+{
+	struct raid_bdev *raid_bdev = request->raid_io->raid_bdev;
+
+	SPDK_ERRLOG("raid5_free_req_strips_iovs_until\n");
+
+	for (uint8_t idx = start_idx; idx != until_idx; idx = raid5_next_idx(idx, raid_bdev)) {
+		free(request->strip_buffs[idx]);
+		request->strip_buffs[idx] = NULL;
+		request->strip_buffs_cnts[idx] = 0;
+	}
+}
+
 static void raid5_submit_rw_request(struct raid_bdev_io *raid_io);
 
 static void
