@@ -938,6 +938,16 @@ raid5_read_exc_req_strip_free_strip_buffs(struct raid5_stripe_request *request)
 	request->strip_buffs_cnts[es_idx] = 0;
 }
 
+static void
+raid5_stripe_req_complete(struct raid5_stripe_request *request)
+{
+	struct raid_bdev_io *raid_io = request->raid_io;
+
+	raid5_free_stripe_request(request);
+
+	raid_bdev_io_complete(raid_io, raid_io->base_bdev_io_status);	
+}
+
 static void raid5_submit_rw_request(struct raid_bdev_io *raid_io);
 
 static void
