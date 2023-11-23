@@ -1734,8 +1734,9 @@ raid5_submit_rw_request(struct raid_bdev_io *raid_io)
 		raid5_submit_write_request(raid_io);
 		break;
 	default:
-		SPDK_ERRLOG("Invalid request type");
-		raid_bdev_io_complete(raid_io, SPDK_BDEV_IO_STATUS_FAILED);
+		SPDK_ERRLOG("RAID5: Invalid request type");
+		raid_io->base_bdev_io_status = SPDK_BDEV_IO_STATUS_FAILED;
+		raid5_stripe_req_complete(request);
 		assert(false);
 	}
 }
