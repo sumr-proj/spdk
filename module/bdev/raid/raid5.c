@@ -1037,6 +1037,67 @@ static void raid5_read_complete_part(struct spdk_bdev_io *bdev_io, bool success,
 					SPDK_BDEV_IO_STATUS_FAILED);
 }
 
+static void raid5_read_req_strips(struct raid5_stripe_request *request);
+
+static void
+_raid5_read_req_strips(void *cb_arg)
+{
+	struct raid5_stripe_request *request = cb_arg;
+	raid5_read_req_strips(request);
+}
+
+static void
+raid5_read_req_strips(struct raid5_stripe_request *request)
+{
+	struct raid_bdev_io 		*raid_io = request->raid_io;
+	struct spdk_bdev_io			*bdev_io = spdk_bdev_io_from_ctx(raid_io);
+	struct raid_bdev			*raid_bdev = raid_io->raid_bdev;
+	struct raid_bdev_io_channel	*raid_ch = raid_io->raid_ch;
+	struct raid_base_bdev_info	*base_info;
+	struct spdk_io_channel		*base_ch;
+	uint64_t			ststrip_idx = raid5_start_strip_idx(bdev_io, raid_bdev);
+	uint64_t			estrip_idx = raid5_end_strip_idx(bdev_io, raid_bdev);
+	uint64_t			base_bdev_io_not_submitted;
+	uint8_t				after_estrip_idx = raid5_next_idx(estrip_idx, raid_bdev);
+	uint8_t				start_idx;
+	int				ret = 0;
+
+	SPDK_ERRLOG("raid5_read_req_strips\n");
+
+	start_idx = (ststrip_idx + raid_io->base_bdev_io_submitted) > raid_bdev->num_base_bdevs ?
+				ststrip_idx + raid_io->base_bdev_io_submitted - raid_bdev->num_base_bdevs :
+				ststrip_idx + raid_io->base_bdev_io_submitted;
+
+	for (uint8_t idx = start_idx; idx != after_estrip_idx; idx = raid5_next_idx(idx, raid_bdev)) {
+		base_info = &raid_bdev->base_bdev_info[idx];
+		base_ch = raid_ch->base_channel[idx];
+
+		ret = spdk_bdev_readv_blocks(base_info->desc, base_ch,
+											request->strip_buffs[idx], request->strip_buffs_cnts[idx],
+											raid5_ofs_blcks(bdev_io, raid_bdev, idx),
+											raid5_num_blcks(bdev_io, raid_bdev, idx),
+											raid5_read_complete_part,
+											request);
+
+		if (spdk_unlikely(ret != 0)) {
+			if (spdk_unlikely(ret == -ENOMEM)) {
+				raid5_queue_io_wait(raid_io, spdk_bdev_desc_get_bdev(base_info->desc),
+							base_ch, _raid5_read_req_strips, request);
+				return;
+			}
+
+			base_bdev_io_not_submitted = ((estrip_idx + raid_bdev->num_base_bdevs) -
+							ststrip_idx) % raid_bdev->num_base_bdevs + 1 -
+							raid_io->base_bdev_io_submitted;
+			raid5_read_complete_part_final(request, base_bdev_io_not_submitted,
+							SPDK_BDEV_IO_STATUS_FAILED);
+			return;
+		}
+
+		++raid_io->base_bdev_io_submitted;
+	}
+}
+
 static void raid5_submit_rw_request(struct raid_bdev_io *raid_io);
 
 static void
