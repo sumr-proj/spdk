@@ -336,6 +336,111 @@ raid5_write_request_writing_complete_part(struct spdk_bdev_io *bdev_io, bool suc
 	}
 }
 
+static bool
+raid5_check_io_boundaries(struct raid_bdev_io *raid_io)
+{
+	struct spdk_bdev_io			*bdev_io = spdk_bdev_io_from_ctx(raid_io);
+	struct raid_bdev			*raid_bdev = raid_io->raid_bdev;
+	uint64_t start_strip_idx = bdev_io->u.bdev.offset_blocks >> raid_bdev->strip_size_shift;
+	uint64_t end_strip_idx = (bdev_io->u.bdev.offset_blocks + bdev_io->u.bdev.num_blocks - 1) >>
+							raid_bdev->strip_size_shift;
+	
+	return (start_strip_idx <= end_strip_idx) &&
+			(start_strip_idx / (raid_bdev->num_base_bdevs - 1) ==
+			end_strip_idx / (raid_bdev->num_base_bdevs - 1));
+}
+
+static inline void
+raid5_check_raid_ch(struct raid_bdev_io_channel *raid_ch)
+{
+	assert(raid_ch != NULL);
+	assert(raid_ch->base_channel != NULL);
+}
+
+static uint64_t
+raid5_start_strip_idx(struct spdk_bdev_io *bdev_io, struct raid_bdev *raid_bdev)
+{
+	uint64_t start_strip_idx;
+	uint64_t parity_strip_idx;
+
+	start_strip_idx = bdev_io->u.bdev.offset_blocks >> raid_bdev->strip_size_shift;
+	parity_strip_idx = raid5_parity_strip_index(raid_bdev,
+			start_strip_idx / (raid_bdev->num_base_bdevs - 1));
+	start_strip_idx %= (raid_bdev->num_base_bdevs - 1);
+	start_strip_idx += 1 + parity_strip_idx;
+	return  start_strip_idx >= raid_bdev->num_base_bdevs ?
+			start_strip_idx - raid_bdev->num_base_bdevs :
+			start_strip_idx;
+}
+
+static uint64_t
+raid5_end_strip_idx(struct spdk_bdev_io *bdev_io, struct raid_bdev *raid_bdev)
+{
+	uint64_t end_strip_idx;
+	uint64_t parity_strip_idx;
+
+	end_strip_idx = (bdev_io->u.bdev.offset_blocks + bdev_io->u.bdev.num_blocks - 1) >>
+			raid_bdev->strip_size_shift;
+	parity_strip_idx = raid5_parity_strip_index(raid_bdev,
+			end_strip_idx / (raid_bdev->num_base_bdevs - 1));
+	end_strip_idx %= (raid_bdev->num_base_bdevs - 1);
+	end_strip_idx += 1 + parity_strip_idx;
+	return end_strip_idx >= raid_bdev->num_base_bdevs ?
+			end_strip_idx - raid_bdev->num_base_bdevs :
+			end_strip_idx;
+}
+
+static uint64_t
+raid5_ofs_blcks(struct spdk_bdev_io *bdev_io, struct raid_bdev *raid_bdev, uint64_t idx)
+{
+	uint64_t ststrip_idx = raid5_start_strip_idx(bdev_io, raid_bdev);
+
+	if (idx == ststrip_idx) {
+		return (((bdev_io->u.bdev.offset_blocks >> raid_bdev->strip_size_shift) /
+				(raid_bdev->num_base_bdevs - 1)) << raid_bdev->strip_size_shift) +
+				(bdev_io->u.bdev.offset_blocks & (raid_bdev->strip_size - 1));
+	} else {
+		return ((bdev_io->u.bdev.offset_blocks >> raid_bdev->strip_size_shift) /
+				(raid_bdev->num_base_bdevs - 1)) << raid_bdev->strip_size_shift;
+	}
+}
+
+static uint64_t
+raid5_num_blcks(struct spdk_bdev_io *bdev_io, struct raid_bdev *raid_bdev, uint64_t idx)
+{
+	uint64_t ststrip_idx = raid5_start_strip_idx(bdev_io, raid_bdev);
+	uint64_t estrip_idx = raid5_end_strip_idx(bdev_io, raid_bdev);
+	uint64_t st_ofs = (bdev_io->u.bdev.offset_blocks & (raid_bdev->strip_size - 1));
+
+	if (idx == ststrip_idx) {
+		if (bdev_io->u.bdev.num_blocks + st_ofs <= raid_bdev->strip_size) {
+			return bdev_io->u.bdev.num_blocks;
+		} else {
+			return raid_bdev->strip_size - st_ofs;
+		}
+	} else if (idx == estrip_idx) {
+		return ((bdev_io->u.bdev.num_blocks + st_ofs - 1) &
+				(raid_bdev->strip_size - 1)) + 1;
+	} else {
+		return raid_bdev->strip_size;
+	}
+}
+
+static inline bool
+raid5_is_req_strip(uint64_t ststrip_idx, uint64_t estrip_idx, uint64_t idx) {
+	return (ststrip_idx <= estrip_idx) ?
+			(ststrip_idx <= idx) && (idx <= estrip_idx) :
+			(ststrip_idx <= idx) || (idx <= estrip_idx);
+}
+
+static inline uint64_t
+raid5_next_idx(uint64_t curr, struct raid_bdev *raid_bdev)
+{
+	return (curr + 1) >= raid_bdev->num_base_bdevs ?
+			curr + 1 - raid_bdev->num_base_bdevs :
+			curr + 1;
+}
+
 static void raid5_submit_rw_request(struct raid_bdev_io *raid_io);
 
 static void
