@@ -15,14 +15,14 @@
 #include "spdk/log.h"
 #include "spdk/likely.h"
 
-enum raid5_rw_type {
+enum raid5_write_type {
 	UNDEFINED = 0,
 	READ_MODIFY_WRITE = 1,
 	DEFAULT = 2
 };
 
 struct raid5_info {
-	enum raid5_rw_type rw_type;
+	enum raid5_write_type write_type;
 };
 
 struct raid5_io_buffer {
@@ -918,14 +918,14 @@ raid5_wz_req_complete_part_final(struct raid_bdev_io *raid_io, uint64_t complete
 	}
 
 	if (raid_io->base_bdev_io_remaining == 0) {
-		struct raid5_info *r0_info = raid_io->raid_bdev->module_private;
+		struct raid5_info *r5_info = raid_io->raid_bdev->module_private;
 
 		if (raid_io->base_bdev_io_status == SPDK_BDEV_IO_STATUS_SUCCESS) {
-			r0_info->rw_type = READ_MODIFY_WRITE;
-			SPDK_NOTICELOG("raid5 rw_type: READ_MODIFY_WRITE\n");
+			r5_info->write_type = READ_MODIFY_WRITE;
+			SPDK_NOTICELOG("raid5 write_type: READ_MODIFY_WRITE\n");
 		} else {
-			r0_info->rw_type = DEFAULT;
-			SPDK_NOTICELOG("raid5 rw_type: DEFAULT\n");
+			r5_info->write_type = DEFAULT;
+			SPDK_NOTICELOG("raid5 write_type: DEFAULT\n");
 		}
 
 		raid_bdev_destroy_cb(raid_io->raid_bdev, raid_io->raid_ch);
@@ -1010,7 +1010,7 @@ raid5_submit_write_zeroes_request(struct raid_bdev_io *raid_io) {
 }
 
 static void
-raid5_set_rw_type(struct raid_bdev *raid_bdev)
+raid5_set_write_type(struct raid_bdev *raid_bdev)
 {
 	struct spdk_bdev_desc *desc;
 	struct spdk_bdev *base_bdev;
@@ -1018,7 +1018,7 @@ raid5_set_rw_type(struct raid_bdev *raid_bdev)
 	struct raid5_info *r5_info = raid_bdev->module_private;
 	int ret;
 
-	r5_info->rw_type = UNDEFINED;
+	r5_info->write_type = UNDEFINED;
 
 	for (uint8_t idx = 0; idx < raid_bdev->num_base_bdevs; ++idx) {
 		desc = raid_bdev->base_bdev_info[idx].desc;
@@ -1026,7 +1026,7 @@ raid5_set_rw_type(struct raid_bdev *raid_bdev)
 			base_bdev = spdk_bdev_desc_get_bdev(desc);
 			if (!base_bdev->fn_table->io_type_supported(base_bdev->ctxt,
 								SPDK_BDEV_IO_TYPE_WRITE_ZEROES)) {
-				r5_info->rw_type = DEFAULT;
+				r5_info->write_type = DEFAULT;
 				return;
 			}
 		}
@@ -1034,7 +1034,7 @@ raid5_set_rw_type(struct raid_bdev *raid_bdev)
 	
 	raid_io = calloc(1, sizeof(struct raid_bdev_io));
 	if (raid_io == NULL) {
-		r5_info->rw_type = DEFAULT;
+		r5_info->write_type = DEFAULT;
 		return;
 	}
 	
@@ -1045,7 +1045,7 @@ raid5_set_rw_type(struct raid_bdev *raid_bdev)
 	raid_io->raid_ch = calloc(1, sizeof(struct raid_bdev_io_channel));
 	if (raid_io->raid_ch == NULL) {
 		free(raid_io);
-		r5_info->rw_type = DEFAULT;
+		r5_info->write_type = DEFAULT;
 		return;
 	}
 
@@ -1053,7 +1053,7 @@ raid5_set_rw_type(struct raid_bdev *raid_bdev)
 	if (ret != 0) {
 		free(raid_io->raid_ch);
 		free(raid_io);
-		r5_info->rw_type = DEFAULT;
+		r5_info->write_type = DEFAULT;
 		return;
 	}
 
@@ -1062,7 +1062,7 @@ raid5_set_rw_type(struct raid_bdev *raid_bdev)
 		raid_bdev_destroy_cb(raid_bdev, raid_io->raid_ch);
 		free(raid_io->raid_ch);
 		free(raid_io);
-		r5_info->rw_type = DEFAULT;
+		r5_info->write_type = DEFAULT;
 		return;
 	}
 }
@@ -1103,7 +1103,7 @@ raid5_start(struct raid_bdev *raid_bdev)
 	assert(r5_info != NULL);
 	raid_bdev->module_private = r5_info;
 
-	raid5_set_rw_type(raid_bdev);
+	raid5_set_write_type(raid_bdev);
 
 	return 0;
 }
