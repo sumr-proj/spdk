@@ -1025,6 +1025,18 @@ raid5_read_complete_part_final(struct raid5_stripe_request *request, uint64_t co
 	}
 }
 
+static void raid5_read_complete_part(struct spdk_bdev_io *bdev_io, bool success, void *cb_arg) {
+	struct raid5_stripe_request *request = cb_arg;
+
+	SPDK_ERRLOG("raid5_read_complete_part\n");
+
+	spdk_bdev_free_io(bdev_io);
+
+	raid5_read_complete_part_final(request, 1, success ?
+					SPDK_BDEV_IO_STATUS_SUCCESS :
+					SPDK_BDEV_IO_STATUS_FAILED);
+}
+
 static void raid5_submit_rw_request(struct raid_bdev_io *raid_io);
 
 static void
