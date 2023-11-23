@@ -441,6 +441,64 @@ raid5_next_idx(uint64_t curr, struct raid_bdev *raid_bdev)
 			curr + 1;
 }
 
+static void
+raid5_xor_iovs_with_iovs(struct iovec *xor_iovs, int xor_iovcnt, uint64_t xor_ofs_b8,
+				struct iovec *iovs, int iovcnt, uint64_t ofs_b8,
+				uint64_t num_b8)
+{
+	uint64_t *xb8;
+	uint64_t *b8;
+	uint64_t xofs8 = xor_ofs_b8;
+	uint64_t ofs8 = ofs_b8;
+	uint64_t xor_idx = 0;
+	uint64_t idx = 0;
+
+	SPDK_ERRLOG("raid5_xor_iovs_with_iovs\n");
+
+	while (xofs8 >= xor_iovs[xor_idx].iov_len / 8) {
+		xofs8 -= xor_iovs[xor_idx].iov_len / 8;
+		++xor_idx;
+	}
+
+	while (ofs8 >= iovs[idx].iov_len / 8) {
+		ofs8 -= iovs[idx].iov_len / 8;
+		++idx;
+	}
+
+	while (num_b8 > 0) {
+		xb8 = xor_iovs[xor_idx].iov_base;
+		xb8 = &xb8[xofs8];
+		b8 = iovs[idx].iov_base;
+		b8 = &b8[ofs8];
+		if (xor_iovs[xor_idx].iov_len / 8 - xofs8 >
+				iovs[idx].iov_len / 8 - ofs8) {
+			for (uint64_t i = ofs8; i < (iovs[idx].iov_len / 8); ++i) {
+				xb8[i - ofs8 + xofs8] ^= b8[i];
+			}
+			num_b8 -= iovs[idx].iov_len / 8 - ofs8;
+			++idx;
+			ofs8 = 0;
+		} else if (xor_iovs[xor_idx].iov_len / 8 - xofs8 <
+				iovs[idx].iov_len / 8 - ofs8) {
+			for (uint64_t i = xofs8; i < (xor_iovs[xor_idx].iov_len / 8); ++i) {
+				xb8[i] ^= b8[i - xofs8 + ofs8];
+			}
+			num_b8 -= xor_iovs[xor_idx].iov_len / 8 - xofs8;
+			++xor_idx;
+			xofs8 = 0;
+		} else {
+			for (uint64_t i = ofs8; i < (iovs[idx].iov_len / 8); ++i) {
+				xb8[i - ofs8 + xofs8] ^= b8[i];
+			}
+			num_b8 -= iovs[idx].iov_len / 8 - ofs8;
+			++idx;
+			ofs8 = 0;
+			++xor_idx;
+			xofs8 = 0;
+		}
+	}	
+}
+
 static void raid5_submit_rw_request(struct raid_bdev_io *raid_io);
 
 static void
