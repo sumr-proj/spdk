@@ -948,6 +948,83 @@ raid5_stripe_req_complete(struct raid5_stripe_request *request)
 	raid_bdev_io_complete(raid_io, raid_io->base_bdev_io_status);	
 }
 
+static bool
+raid5_read_complete_part_final(struct raid5_stripe_request *request, uint64_t completed,
+				enum spdk_bdev_io_status status)
+{
+	struct raid_bdev_io *raid_io = request->raid_io;
+
+	SPDK_ERRLOG("raid5_read_complete_part_final\n");
+
+	assert(raid_io->base_bdev_io_remaining >= completed);
+	raid_io->base_bdev_io_remaining -= completed;
+
+	if (status != SPDK_BDEV_IO_STATUS_SUCCESS) {
+		raid_io->base_bdev_io_status = status;
+	}
+
+	if (raid_io->base_bdev_io_remaining == 0) {
+		if (request->broken_strip_idx != raid_io->raid_bdev->num_base_bdevs) {
+			struct raid_bdev 		*raid_bdev = raid_io->raid_bdev;
+			struct spdk_bdev_io		*bdev_io = spdk_bdev_io_from_ctx(raid_io);
+			uint64_t block_size_b8 = ((uint64_t)128 * raid_bdev->strip_size_kb)
+					/ raid_bdev->strip_size;
+			uint64_t br_ofs_b8 = block_size_b8 * raid5_ofs_blcks(bdev_io, raid_bdev, request->broken_strip_idx);
+			uint64_t br_num_b8 = block_size_b8 * raid5_num_blcks(bdev_io, raid_bdev, request->broken_strip_idx);
+			uint64_t ofs_b8;
+			uint8_t sts_idx = raid5_start_strip_idx(bdev_io, raid_bdev);
+			uint8_t es_idx = raid5_end_strip_idx(bdev_io, raid_bdev);
+			uint8_t after_es_idx = raid5_next_idx(es_idx, raid_bdev);
+			uint8_t after_broken = raid5_next_idx(request->broken_strip_idx, raid_bdev);
+			raid5_fill_iovs_with_zeroes(request->strip_buffs[request->broken_strip_idx],
+							request->strip_buffs_cnts[request->broken_strip_idx]);
+
+			for (uint8_t i = after_es_idx; i != sts_idx; i = raid5_next_idx(i, raid_bdev)) {
+				raid5_xor_iovs_with_iovs(request->strip_buffs[request->broken_strip_idx],
+						request->strip_buffs_cnts[request->broken_strip_idx], 0,
+						request->strip_buffs[i], request->strip_buffs_cnts[i], 0,
+						br_num_b8);
+			}
+
+			for (uint8_t i = sts_idx; i != request->broken_strip_idx; i = raid5_next_idx(i, raid_bdev)) {
+				ofs_b8 = block_size_b8 * raid5_ofs_blcks(bdev_io, raid_bdev, i);
+				if (br_ofs_b8 >= ofs_b8) {
+					ofs_b8 = br_ofs_b8 - ofs_b8;
+				} else {
+					ofs_b8 = 0;
+				}
+				raid5_xor_iovs_with_iovs(request->strip_buffs[request->broken_strip_idx],
+						request->strip_buffs_cnts[request->broken_strip_idx], 0,
+						request->strip_buffs[i], request->strip_buffs_cnts[i], ofs_b8,
+						br_num_b8);
+			}
+
+			for (uint8_t i = after_broken; i != after_es_idx; i = raid5_next_idx(i, raid_bdev)) {
+				ofs_b8 = block_size_b8 * raid5_ofs_blcks(bdev_io, raid_bdev, i);
+				if (br_ofs_b8 >= ofs_b8) {
+					ofs_b8 = br_ofs_b8 - ofs_b8;
+				} else {
+					ofs_b8 = 0;
+				}
+				raid5_xor_iovs_with_iovs(request->strip_buffs[request->broken_strip_idx],
+						request->strip_buffs_cnts[request->broken_strip_idx], 0,
+						request->strip_buffs[i], request->strip_buffs_cnts[i], ofs_b8,
+						br_num_b8);
+			}
+
+			raid5_read_exc_req_strip_free_strip_buffs(request);
+			assert(0);
+		} else {
+			raid5_read_req_strips_free_strip_buffs(request);
+		}
+
+		raid5_stripe_req_complete(request);
+		return true;
+	} else {
+		return false;
+	}
+}
+
 static void raid5_submit_rw_request(struct raid_bdev_io *raid_io);
 
 static void
