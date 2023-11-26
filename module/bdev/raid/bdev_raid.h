@@ -6,17 +6,35 @@
 #ifndef SPDK_BDEV_RAID_INTERNAL_H
 #define SPDK_BDEV_RAID_INTERNAL_H
 
-#define MATRIX_REBUILD_SIZE 32768 /* 2^15 */
-
 #include "spdk/bdev_module.h"
 #include "spdk/uuid.h"
+
+#define MATRIX_REBUILD_SIZE 32768 /* should be < syzeof(int64_t) and power of 2 */
+#define ATOMIC_TYPE uint64_t
+#define ATOMIC_DATA(name) ATOMIC_TYPE name
+#define ATOMIC_SNAPSHOT_TYPE uint64_t /* atomic type can be converted to the type */
+#define ATOMIC_SNAPSHOT(name) ATOMIC_SNAPSHOT_TYPE name
+#define LEN_AREA_STR_IN_BIT sizeof(ATOMIC_SNAPSHOT_TYPE)*8
+
+#define BASE_BDEVS_MAX_NUM 64
+
+// #include "service.h"
 
 enum rebuild_flag {
 	/* rebuild flag set during initialization */
 	REBUILD_FLAG_INIT_CONFIGURATION = 0,
 
 	/* if there is at least one broken area in rbm(rebuild_matrix) */
-	REBUILD_FLAG_NEED_REBUILD = 1,
+	REBUILD_FLAG_NEED_REBUILD = 1, //TODO: можно переписать как счетчик областей, которые надо проребилдить (мб поможет при атомарном снятии флага) + у Юли инкремент такого щетчика должен быть до выставления единичек
+
+	/* if service start rebuild cycle */
+	REBUILD_FLAG_IN_PROGRESS = 2,
+
+	/* fatal error during rebuild cycle */
+	REBUILD_FLAG_FATAL_ERROR = 59,
+
+	/* show that rebuild struct is initialized */
+	REBUILD_FLAG_INITIALIZED = 60,
 };
 
 enum raid_level {
@@ -58,7 +76,7 @@ typedef void (*raid_bdev_remove_base_bdev_cb)(void *ctx, int status);
  */
 struct raid_rebuild {
 	/* stores data on broken memory areas */
-	uint64_t rebuild_matrix[MATRIX_REBUILD_SIZE];
+	ATOMIC_DATA(rebuild_matrix[MATRIX_REBUILD_SIZE]);
 
 	/* number of memory areas */
 	uint64_t			num_memory_areas;
@@ -67,7 +85,13 @@ struct raid_rebuild {
 	uint64_t			strips_per_area;
 
 	/* rebuild flag */
-	uint64_t			rebuild_flag;
+	ATOMIC_DATA(rebuild_flag); //TODO: переписать на атомики
+
+	/* 
+	 * structure describing a specific rebuild 
+	 * (i.e. when cycle_progress == NULL, REBUILD_FLAG_IN_PROGRESS is omitted) 
+	 */ 
+	struct rebuild_progress *cycle_progress;
 };
 
 /*
@@ -172,6 +196,9 @@ struct raid_bdev {
 
 	/* RAID rebuild struct */
 	struct raid_rebuild			*rebuild;
+
+	/* Poller responsible for processing rebuild */
+	struct spdk_poller *rebuild_poller;
 
 	/* Set to true if destroy of this raid bdev is started. */
 	bool				destroy_started;
@@ -283,6 +310,12 @@ struct raid_bdev_module {
 	 * is satisfied.
 	 */
 	void (*resize)(struct raid_bdev *raid_bdev);
+
+	/*
+	 * Called to submit rebuild request
+	 * If implemented.
+	 */
+	int (*rebuild_request)(struct raid_bdev *raid_bdev, struct rebuild_progress *cycle_progress, spdk_bdev_io_completion_cb cb);
 
 	TAILQ_ENTRY(raid_bdev_module) link;
 };
