@@ -660,6 +660,253 @@ raid5_free_req_strips_iovs_until(struct raid5_stripe_request *request,
 }
 
 static int
+raid5_set_all_strip_buffs(struct raid5_stripe_request *request, uint64_t ofs_blcks, uint64_t num_blcks)
+{
+	struct spdk_bdev_io			*bdev_io = spdk_bdev_io_from_ctx(request->raid_io);
+	struct raid_bdev			*raid_bdev = request->raid_io->raid_bdev;
+	uint64_t			sts_idx = raid5_start_strip_idx(bdev_io, raid_bdev);
+	uint64_t			es_idx = raid5_end_strip_idx(bdev_io, raid_bdev);
+	uint8_t				after_es_idx = raid5_next_idx(es_idx, raid_bdev);
+	uint64_t			remaining_len = bdev_io->u.bdev.iovs[0].iov_len;
+	uint64_t			len;
+	uint64_t			block_size_b = ((uint64_t)1024 * raid_bdev->strip_size_kb) / raid_bdev->strip_size;
+	uint64_t			*iov_base_b8;
+	uint64_t			blocks;
+	int			end_iov_idx;
+	int			iov_idx = 0;
+	int			ret = 0;
+	int			sts_idx_ofs = 0;
+	int			es_idx_extra = 0;
+
+	SPDK_ERRLOG("raid5_set_all_strip_buffs\n");
+
+	// not req strip
+	ret = raid5_get_strips_buffs_until(request, after_es_idx, sts_idx, num_blcks);
+	if (ret != 0) {
+		return ret;
+	}
+
+	// start req strip
+	sts_idx_ofs = ofs_blcks != raid5_ofs_blcks(bdev_io, raid_bdev, sts_idx) ?
+					1 : 0;
+
+	blocks = raid5_num_blcks(bdev_io, raid_bdev, sts_idx);
+	end_iov_idx = iov_idx;
+	len = remaining_len;
+
+	while ((len / block_size_b) < blocks) {
+		++end_iov_idx;
+		len += bdev_io->u.bdev.iovs[end_iov_idx].iov_len;
+	}
+
+	request->strip_buffs_cnts[sts_idx] = end_iov_idx - iov_idx + 1 + sts_idx_ofs;
+	request->strip_buffs[sts_idx] = calloc(request->strip_buffs_cnts[sts_idx], sizeof(struct iovec));
+	if (request->strip_buffs[sts_idx] == NULL) {
+		raid5_free_strips_buffs_until(request, after_es_idx, sts_idx);
+		request->strip_buffs_cnts[sts_idx] = 0;
+		return -ENOMEM;
+	}
+	
+	len = blocks * block_size_b;
+	
+	iov_base_b8 = bdev_io->u.bdev.iovs[iov_idx].iov_base;
+	request->strip_buffs[sts_idx][sts_idx_ofs].iov_base =
+			&iov_base_b8[(bdev_io->u.bdev.iovs[iov_idx].iov_len - remaining_len) / 8];
+
+	SPDK_ERRLOG("iov_base_b8: %llu\n", iov_base_b8);
+	SPDK_ERRLOG("idx: %lu\n", (bdev_io->u.bdev.iovs[iov_idx].iov_len - remaining_len) / 8);
+	SPDK_ERRLOG("iov_base: %llu\n", request->strip_buffs[sts_idx][sts_idx_ofs].iov_base);
+	SPDK_ERRLOG("remaining len: %lu\n", remaining_len);
+	SPDK_ERRLOG("iov_idx: %d", iov_idx);
+
+	if (remaining_len >= blocks * block_size_b) {
+		request->strip_buffs[sts_idx][sts_idx_ofs].iov_len = blocks * block_size_b;
+		len -= blocks * block_size_b;
+		remaining_len -= blocks * block_size_b;
+	} else {
+		request->strip_buffs[sts_idx][sts_idx_ofs].iov_len = remaining_len;
+		len -= remaining_len;
+		for (uint8_t i = iov_idx + 1; i < end_iov_idx; ++i) {
+			request->strip_buffs[sts_idx][sts_idx_ofs + i - iov_idx].iov_base = bdev_io->u.bdev.iovs[i].iov_base;
+			request->strip_buffs[sts_idx][sts_idx_ofs + i - iov_idx].iov_len = bdev_io->u.bdev.iovs[i].iov_len;
+			len -= request->strip_buffs[sts_idx][sts_idx_ofs + i - iov_idx].iov_len;
+		}
+		request->strip_buffs[sts_idx][request->strip_buffs_cnts[sts_idx] - 1].iov_base =
+				bdev_io->u.bdev.iovs[end_iov_idx].iov_base;
+		request->strip_buffs[sts_idx][request->strip_buffs_cnts[sts_idx] - 1].iov_len = len;
+		remaining_len = bdev_io->u.bdev.iovs[end_iov_idx].iov_len - len;
+		iov_idx = end_iov_idx;
+	}
+
+	if (remaining_len == 0) {
+		++iov_idx;
+		if (iov_idx < bdev_io->u.bdev.iovcnt) {
+			remaining_len = bdev_io->u.bdev.iovs[iov_idx].iov_len;
+		}
+	}
+
+	if (sts_idx_ofs == 1) {
+		request->strip_buffs[sts_idx][0].iov_len = (raid5_ofs_blcks(bdev_io, raid_bdev, sts_idx)
+						- ofs_blcks) * block_size_b;
+		request->strip_buffs[sts_idx][0].iov_base = calloc(request->strip_buffs[sts_idx][0].iov_len,
+						sizeof(char));
+		if (request->strip_buffs[sts_idx][0].iov_base == NULL) {
+			raid5_free_strips_buffs_until(request, after_es_idx, sts_idx);
+			free(request->strip_buffs[sts_idx]);
+			request->strip_buffs[sts_idx] = NULL;
+			request->strip_buffs_cnts[sts_idx] = 0;
+			return -ENOMEM;
+		}
+	}
+
+	if (sts_idx == es_idx) {
+		return 0;
+	}
+
+	// middle req strip
+	ret = raid5_set_req_strips_iovs_until(request,
+					raid5_next_idx(sts_idx, raid_bdev), es_idx,
+					&iov_idx, &remaining_len);
+	if (ret != 0) {
+		raid5_free_strips_buffs_until(request, after_es_idx, sts_idx);
+		if (sts_idx_ofs == 1) {
+			free(request->strip_buffs[sts_idx][0].iov_base);
+		}
+		free(request->strip_buffs[sts_idx]);
+		request->strip_buffs[sts_idx] = NULL;
+		request->strip_buffs_cnts[sts_idx] = 0;
+		
+		return ret;
+	}
+
+	// end req strip
+	es_idx_extra = ofs_blcks + num_blcks >
+			raid5_ofs_blcks(bdev_io, raid_bdev, es_idx) +
+			raid5_num_blcks(bdev_io, raid_bdev, es_idx) ?
+			1 : 0;
+
+	blocks = raid5_num_blcks(bdev_io, raid_bdev, es_idx);
+	end_iov_idx = iov_idx;
+	len = remaining_len;
+
+	while ((len / block_size_b) < blocks) {
+		++end_iov_idx;
+		len += bdev_io->u.bdev.iovs[end_iov_idx].iov_len;
+	}
+
+	request->strip_buffs_cnts[es_idx] = end_iov_idx - iov_idx + 1 + es_idx_extra;
+	request->strip_buffs[es_idx] = calloc(request->strip_buffs_cnts[es_idx], sizeof(struct iovec));
+	if (request->strip_buffs[es_idx] == NULL) {
+		raid5_free_strips_buffs_until(request, after_es_idx, sts_idx);
+		if (sts_idx_ofs == 1) {
+			free(request->strip_buffs[sts_idx][0].iov_base);
+		}
+		free(request->strip_buffs[sts_idx]);
+		request->strip_buffs[sts_idx] = NULL;
+		request->strip_buffs_cnts[sts_idx] = 0;
+		raid5_free_req_strips_iovs_until(request,
+						raid5_next_idx(sts_idx, raid_bdev), es_idx);
+		request->strip_buffs_cnts[es_idx] = 0;
+		return -ENOMEM;
+	}
+
+	len = blocks * block_size_b;
+
+	iov_base_b8 = bdev_io->u.bdev.iovs[iov_idx].iov_base;
+	request->strip_buffs[es_idx][0].iov_base =
+			&iov_base_b8[(bdev_io->u.bdev.iovs[iov_idx].iov_len - remaining_len) / 8];
+	if (remaining_len >= blocks * block_size_b) {
+		request->strip_buffs[es_idx][0].iov_len = blocks * block_size_b;
+		len -= blocks * block_size_b;
+		remaining_len -= blocks * block_size_b;
+	} else {
+		request->strip_buffs[es_idx][0].iov_len = remaining_len;
+		len -= remaining_len;
+		for (uint8_t i = iov_idx + 1; i < end_iov_idx; ++i) {
+			request->strip_buffs[es_idx][i - iov_idx].iov_base = bdev_io->u.bdev.iovs[i].iov_base;
+			request->strip_buffs[es_idx][i - iov_idx].iov_len = bdev_io->u.bdev.iovs[i].iov_len;
+			len -= request->strip_buffs[es_idx][i - iov_idx].iov_len;
+		}
+		request->strip_buffs[es_idx][request->strip_buffs_cnts[es_idx] - 1].iov_base =
+				bdev_io->u.bdev.iovs[end_iov_idx].iov_base;
+		request->strip_buffs[es_idx][request->strip_buffs_cnts[es_idx] - 1].iov_len = len;
+		remaining_len = bdev_io->u.bdev.iovs[end_iov_idx].iov_len - len;
+		iov_idx = end_iov_idx;
+	}
+
+	if (remaining_len == 0) {
+		++iov_idx;
+		if (iov_idx < bdev_io->u.bdev.iovcnt) {
+			remaining_len = bdev_io->u.bdev.iovs[iov_idx].iov_len;
+		}
+	}
+
+	if (es_idx_extra == 1) {
+		request->strip_buffs[es_idx][request->strip_buffs_cnts[es_idx] - 1].iov_len =
+						ofs_blcks + num_blcks -
+						(raid5_ofs_blcks(bdev_io, raid_bdev, es_idx) +
+						raid5_num_blcks(bdev_io, raid_bdev, es_idx));
+		request->strip_buffs[es_idx][request->strip_buffs_cnts[es_idx] - 1].iov_base =
+						calloc(request->strip_buffs[es_idx][request->strip_buffs_cnts[es_idx]
+						- 1].iov_len,
+						sizeof(char));
+		if (request->strip_buffs[es_idx][request->strip_buffs_cnts[es_idx] - 1].iov_base
+				== NULL) {
+			raid5_free_strips_buffs_until(request, after_es_idx, sts_idx);
+			if (sts_idx_ofs == 1) {
+				free(request->strip_buffs[sts_idx][0].iov_base);
+			}
+			free(request->strip_buffs[sts_idx]);
+			request->strip_buffs[sts_idx] = NULL;
+			request->strip_buffs_cnts[sts_idx] = 0;
+			raid5_free_req_strips_iovs_until(request,
+							raid5_next_idx(sts_idx, raid_bdev), es_idx);
+			free(request->strip_buffs[es_idx]);
+			request->strip_buffs[es_idx] = NULL;
+			request->strip_buffs_cnts[es_idx] = 0;
+			return -ENOMEM;
+		}
+	}
+	return 0;
+}
+
+static void
+raid5_free_all_strip_buffs(struct raid5_stripe_request *request, uint64_t ofs_blcks, uint64_t num_blcks)
+{
+	struct spdk_bdev_io			*bdev_io = spdk_bdev_io_from_ctx(request->raid_io);
+	struct raid_bdev			*raid_bdev = request->raid_io->raid_bdev;
+	uint64_t			sts_idx = raid5_start_strip_idx(bdev_io, raid_bdev);
+	uint64_t			es_idx = raid5_end_strip_idx(bdev_io, raid_bdev);
+	uint8_t				after_es_idx = raid5_next_idx(es_idx, raid_bdev);
+
+	SPDK_ERRLOG("raid5_free_all_strip_buffs\n");
+
+	raid5_free_strips_buffs_until(request, after_es_idx, sts_idx);
+
+	if (ofs_blcks != raid5_ofs_blcks(bdev_io, raid_bdev, sts_idx)) {
+		free(request->strip_buffs[sts_idx][0].iov_base);
+	}
+	free(request->strip_buffs[sts_idx]);
+	request->strip_buffs[sts_idx] = NULL;
+	request->strip_buffs_cnts[sts_idx] = 0;
+	if (sts_idx == es_idx) {
+		return;
+	}
+
+	raid5_free_req_strips_iovs_until(request,
+					raid5_next_idx(sts_idx, raid_bdev), es_idx);
+
+	if (ofs_blcks + num_blcks > raid5_ofs_blcks(bdev_io, raid_bdev, es_idx) +
+			raid5_num_blcks(bdev_io, raid_bdev, es_idx)) {
+		free(request->strip_buffs[es_idx][request->strip_buffs_cnts[es_idx]
+				- 1].iov_base);
+	}
+	free(request->strip_buffs[es_idx]);
+	request->strip_buffs[es_idx] = NULL;
+	request->strip_buffs_cnts[es_idx] = 0;
+}
+
+static int
 raid5_read_req_strips_set_strip_buffs(struct raid5_stripe_request *request)
 {
 	struct spdk_bdev_io			*bdev_io = spdk_bdev_io_from_ctx(request->raid_io);
