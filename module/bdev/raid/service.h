@@ -7,6 +7,7 @@
 #define SPDK_RAID_SERVICE_INTERNAL_H
 
 #include "spdk/queue.h"
+#include "atomic_raid.h"
 #include "bdev_raid.h"
 
 //->
@@ -14,14 +15,12 @@
 #define fl(rebuild) &(rebuild->rebuild_flag)
 #define NOT_NEED_REBUILD -1
 //->
-//TODO: Надо проверить, что побитовые макросы с указателями нормально работают, а то я вообще хз, мб тут ошибка
-#define ATOMIC_IS_AREA_STR_CLEAR(area_srt) (area_srt)
-#define CREATE_AREA_STR_SNAPSHOT(area_srt_ptr) (*area_srt_ptr)
-#define ATOMIC_INCREMENT(ptr) ((*ptr)++)
-#define ATOMIC_DECREMENT(ptr) ((*ptr)--)
-#define ATOMIC_EXCHANGE(dest_ptr, exc, src) (TEST_CAS(dest_ptr, exc, src))
+#define ATOMIC_IS_AREA_STR_CLEAR(ptr) (*ptr)
+#define CREATE_AREA_STR_SNAPSHOT(area_srt_ptr) raid_atomic64_read(area_srt_ptr)
+#define ATOMIC_INCREMENT(ptr) raid_atomic64_inc(ptr)
+#define ATOMIC_DECREMENT(ptr) raid_atomic64_dec(ptr)
+#define ATOMIC_EXCHANGE(dest_ptr, exc, src) (raid_atomic64_cmpxchg(dest_ptr, exc, src))
 // ->
-// TODO: индексы у битов идут справа на лево!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! (все норм?)
 #define b_BASE_TYPE uint64_t
 #define b_BIT_PROECTION(name) b_BASE_TYPE name[SPDK_CEIL_DIV(MATRIX_REBUILD_SIZE, (sizeof(b_BASE_TYPE)*8))]
 #define b_GET_IDX_BP(x) (x / (sizeof(b_BASE_TYPE)*8))
@@ -29,7 +28,7 @@
 //
 
 static inline bool
-TEST_CAS(ATOMIC_TYPE *ptr, ATOMIC_SNAPSHOT_TYPE exc, ATOMIC_SNAPSHOT_TYPE src)
+_CAS(ATOMIC_TYPE *ptr, ATOMIC_SNAPSHOT_TYPE exc, ATOMIC_SNAPSHOT_TYPE src)
 {
     if (*ptr == exc){
         *ptr = src;
@@ -50,9 +49,6 @@ struct iteration_step
 
 struct rebuild_cycle_iteration
 {
-   /* true if one part of the rebuild cycle is completed */
-    bool complete;
-    
     /* number of broken areas in current area stripe */
     int16_t br_area_cnt;
 
@@ -87,7 +83,7 @@ struct rebuild_progress {
     uint64_t area_str_cnt;
 
     /* number of area stripes with processed areas (tried to rebuild all the broken areas) */
-    uint64_t clear_area_str_cnt; //TODO: думаю, что не должно быть атомиком, потому что измеяется последовательно
+    uint64_t clear_area_str_cnt;
 
     /*
      * To avoid memory overloading, only one area stripe (in need of rebuild)
