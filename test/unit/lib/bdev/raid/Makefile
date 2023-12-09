@@ -6,7 +6,8 @@
 SPDK_ROOT_DIR := $(abspath $(CURDIR)/../../../../..)
 include $(SPDK_ROOT_DIR)/mk/spdk.common.mk
 
-DIRS-y = bdev_raid.c concat.c raid1.c
+DIRS-y = concat.c 
+# raid1.c bdev_raid.c
 
 DIRS-$(CONFIG_RAID5F) += raid5f.c
 

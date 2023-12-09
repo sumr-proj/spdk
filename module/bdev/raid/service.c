@@ -10,16 +10,11 @@
 #include "spdk/util.h"
 #include "spdk/queue.h"
 
+#include "atomic_raid.h"
 #include "bdev_raid.h"
 #include "service.h"
 
 #define DEBUG__
-
-/* ============================ TESTS ==================================== */
-
-// TODO: Сейчас iovcnt = 1, доделать, чтоб можно было создавать любого количества
-#define _MUX_BUF_LENGTH 1
-// ----- //
 
 /* ======================= Poller functionality =========================== */
 
@@ -41,9 +36,8 @@ partly_submit_iteration(bool result ,uint64_t iter_idx, uint16_t area_idx, struc
 
 static inline void
 _free_sg_buffer_part(struct iovec *vec_array, uint64_t len)
-{ //TODO: проверить, что оно работает (в for совсем неуверен)
+{
     struct iovec *base_vec;
-    //TODO: мб вообще не надо.
 
     for(base_vec = vec_array; base_vec < vec_array + len; base_vec++)
     {
@@ -84,7 +78,7 @@ allocate_sg_buffer(size_t elem_size, size_t elemcnt, size_t align)
     }
 
     for (size_t i = 0; i < elemcnt; i++)
-    { //TODO: люблю лажать с индексами, проверить, что все ок
+    {
         vec_array[i].iov_len = elem_size;
         vec_array[i].iov_base = (void*)spdk_dma_zmalloc(sizeof(uint8_t)*vec_array[i].iov_len, align, NULL);
         if(vec_array[i].iov_base == NULL)
@@ -174,7 +168,7 @@ init_rebuild_cycle(struct rebuild_progress *cycle_progress, struct raid_bdev *ra
 
     for (uint64_t i = 0; i < rebuild->num_memory_areas ; i++)
     {
-        if (ATOMIC_IS_AREA_STR_CLEAR(rebuild->rebuild_matrix[i])) continue;
+        if (ATOMIC_IS_AREA_STR_CLEAR(&rebuild->rebuild_matrix[i])) continue;
 
         if(start_idx == NOT_NEED_REBUILD)
         {
@@ -230,7 +224,6 @@ init_cycle_iteration(struct raid_rebuild *rebuild, int64_t curr_idx)
     struct rebuild_cycle_iteration *cycle_iter = &(rebuild->cycle_progress->cycle_iteration);
 
     cycle_iter->iter_idx = curr_idx;
-    cycle_iter->complete = false;
     cycle_iter->snapshot = CREATE_AREA_STR_SNAPSHOT(&(rebuild->rebuild_matrix[curr_idx]));
     cycle_iter->br_area_cnt = count_broken_areas(cycle_iter->snapshot);
     cycle_iter->pr_area_cnt = 0;
@@ -282,7 +275,10 @@ continue_rebuild(struct spdk_bdev_io *bdev_io, bool success, void *cb_arg)
     int ret = 0;
 
     free_cd_arg(cb_arg);
-    spdk_bdev_free_io(bdev_io);
+    if(bdev_io != NULL){
+        // bdev_io->iov = NULL;
+        spdk_bdev_free_io(bdev_io);
+    }
     partly_submit_iteration(success, iter_idx, area_idx, raid_bdev->rebuild);
 
     /* Test whether the end of the iteration or not */
@@ -295,8 +291,9 @@ continue_rebuild(struct spdk_bdev_io *bdev_io, bool success, void *cb_arg)
 
     /* Wether it is the last iteration or not */
     if(cycle_progress->clear_area_str_cnt == cycle_progress->area_str_cnt)
-    { //TODO: if clear_area_str_cnt - atomic => problem
-        finish_rebuild_cycle(raid_bdev);
+    {
+
+        SPDK_SET_BIT(&(raid_bdev->rebuild->rebuild_flag), REBUILD_FLAG_FINISH);
         return;
     }
 
@@ -307,13 +304,13 @@ continue_rebuild(struct spdk_bdev_io *bdev_io, bool success, void *cb_arg)
 
     if(spdk_unlikely(ret != 0))
     {
-        SPDK_SET_BIT(&(raid_bdev->rebuild->rebuild_flag), REBUILD_FLAG_FATAL_ERROR);
+        SPDK_SET_BIT(fl(raid_bdev->rebuild), REBUILD_FLAG_FATAL_ERROR);
     }
 }
 
 int
 run_rebuild_poller(void* arg)
-{ //TODO: в целом реализация наивная (без учета многопоточности) - не очень пока понимаю, как ее прикрутить.
+{
     struct raid_bdev *raid_bdev = arg;
     struct raid_rebuild *rebuild = raid_bdev->rebuild;
     struct rebuild_progress *cycle_progress = NULL;
@@ -345,6 +342,10 @@ run_rebuild_poller(void* arg)
         /*
          * Previous recovery process is not complete
          */
+        if (SPDK_TEST_BIT(fl(rebuild), REBUILD_FLAG_FINISH))
+        {
+            finish_rebuild_cycle(raid_bdev);
+        }
         return 0;
     }
 
@@ -398,164 +399,3 @@ run_rebuild_poller(void* arg)
     }
     return ret;
 }
-
-// ===============================TESTs=========================================== //
-// TODO: мб не надо, переделать.
-// struct container {
-//     struct raid_bdev *raid_bdev;
-//     int idx;
-//     struct iovec * buff;
-// } typedef container;
-
-
-// static inline struct iovec *
-// alloc_continuous_buffer_part(size_t iovlen, size_t align)
-// {
-//     struct iovec *buf;
-//     buf = spdk_dma_zmalloc(sizeof(struct iovec), 0, NULL);
-//     if(buf == NULL)
-//     {
-//         return NULL;
-//     }
-
-//     buf->iov_len = iovlen;
-//     buf->iov_base = spdk_dma_zmalloc(sizeof(uint8_t)*(buf->iov_len), 0, NULL);
-//     if(buf->iov_base == NULL)
-//     {
-//         spdk_dma_free(buf);
-//         return NULL;
-//     }
-
-//     return buf;
-// }
-
-// static inline void
-// free_continuous_buffer_part(struct iovec * buf_elem)
-// {
-//     spdk_dma_free(buf_elem->iov_base);
-//     spdk_dma_free(buf_elem);
-// }
-
-
-// static inline int
-// fill_ones_write_request(struct iovec * buf_array, int buf_len)
-// {
-//     // не учитывает align внутри iov_base
-//     SPDK_WARNLOG("i'm here 2 \n");
-
-//     if(buf_len > _MUX_BUF_LENGTH)
-//     {
-//         return -1;
-//     }
-//     for(size_t i = 0; i<buf_len; i++)
-//     {
-//         SPDK_WARNLOG("i'm here 3 \n");
-//         *((uint8_t *)(buf_array[i].iov_base)) = UINT8_MAX;
-//         SPDK_WARNLOG("i'm here 4 \n");
-//         SPDK_WARNLOG("%d", UINT8_MAX);
-//         SPDK_WARNLOG("i'm here 5 \n");
-
-//     }
-
-//     return 0;
-// }
-
-// void
-// cd_read_func(struct spdk_bdev_io *bdev_io, bool success, void *cb_arg)
-// {
-//     container *cont = cb_arg;
-//     if(success)
-//     {
-//         SPDK_WARNLOG("test (read) success\n");
-//         SPDK_WARNLOG("\n\n test = %d \n\n", *((uint8_t*)cont->buff->iov_base));
-//     } else {
-//         SPDK_ERRLOG("test (read) fail\n");
-//     }
-
-//     free_continuous_buffer_part(cont->buff);
-//     spdk_bdev_free_io(bdev_io);
-//     free(cont);
-//     SPDK_WARNLOG("test (read) success\n");
-// }
-
-// void
-// cd_write_func(struct spdk_bdev_io *bdev_io, bool success, void *cb_arg)
-// {
-//     container *cont = cb_arg;
-//     if(success)
-//     {
-//         SPDK_WARNLOG("test (write) success\n");
-//     } else {
-//         SPDK_ERRLOG("test (write) fail\n");
-//     }
-
-//     free_continuous_buffer_part(cont->buff);
-//     spdk_bdev_free_io(bdev_io);
-//     submit_read_request_base_bdev(cont->raid_bdev, cont->idx);
-//     free(cont);
-// }
-
-// void
-// submit_write_request_base_bdev(struct raid_bdev *raid_bdev, uint8_t idx)
-// {
-//     struct spdk_bdev_desc *desc = __base_desc_from_raid_bdev(raid_bdev, idx);
-//     struct spdk_bdev *base_bdev = spdk_bdev_desc_get_bdev(desc);
-//     struct spdk_io_channel *ch = spdk_bdev_get_io_channel(desc);
-//     struct iovec *buffer;
-//     container *cont;
-//     int ret;
-
-
-//     buffer = alloc_continuous_buffer_part(base_bdev->blocklen, base_bdev->required_alignment);
-//     if (fill_ones_write_request(buffer, 1) != 0)
-//     {
-//         SPDK_ERRLOG("fill_ones_write_request was fail\n");
-//     }
-//     cont = calloc(1, sizeof(container));
-//     if (cont == NULL){
-//         SPDK_ERRLOG("cont alloc failed\n");
-//     }
-
-//     cont->buff = buffer;
-//     cont->idx = 0;
-//     cont->raid_bdev = raid_bdev;
-//     ret = spdk_bdev_writev_blocks (desc, ch, buffer, 1, 0, 1, cd_write_func, cont);
-
-//     if(spdk_likely(ret == 0))
-//     {
-//         SPDK_WARNLOG("submit test (write) success\n");
-//     } else {
-//         SPDK_ERRLOG("submit test (write) fail\n");
-//     }
-// }
-
-// void
-// submit_read_request_base_bdev(struct raid_bdev *raid_bdev, uint8_t idx)
-// {
-//     struct spdk_bdev_desc *desc = __base_desc_from_raid_bdev(raid_bdev, idx);
-//     struct spdk_bdev *base_bdev = spdk_bdev_desc_get_bdev(desc);
-//     struct spdk_io_channel *ch = spdk_bdev_get_io_channel(desc);
-//     struct iovec *buffer;
-//     container *cont;
-//     int ret;
-
-//     buffer = alloc_continuous_buffer_part(base_bdev->blocklen, base_bdev->required_alignment);
-
-//     cont = calloc(1, sizeof(container));
-//     if (cont == NULL){
-//         SPDK_ERRLOG("cont alloc failed\n");
-//     }
-
-//     cont->buff = buffer;
-//     cont->idx = 0;
-//     cont->raid_bdev = raid_bdev;
-//     ret = spdk_bdev_readv_blocks(desc, ch, buffer, 1, 0, 1, cd_read_func, cont);
-
-//     if(spdk_likely(ret == 0))
-//     {
-//         SPDK_WARNLOG("submit test (read) success\n");
-//     } else {
-//         SPDK_ERRLOG("submit test (read) fail\n");
-//     }
-// }
-/* ======================================================================== */

@@ -8,9 +8,10 @@
 
 #include "spdk/bdev_module.h"
 #include "spdk/uuid.h"
+#include "atomic_raid.h"
 
 #define MATRIX_REBUILD_SIZE 32768 /* should be < syzeof(int64_t) and power of 2 */
-#define ATOMIC_TYPE uint64_t
+#define ATOMIC_TYPE raid_atomic64
 #define ATOMIC_DATA(name) ATOMIC_TYPE name
 #define ATOMIC_SNAPSHOT_TYPE uint64_t /* atomic type can be converted to the type */
 #define ATOMIC_SNAPSHOT(name) ATOMIC_SNAPSHOT_TYPE name
@@ -25,10 +26,13 @@ enum rebuild_flag {
 	REBUILD_FLAG_INIT_CONFIGURATION = 0,
 
 	/* if there is at least one broken area in rbm(rebuild_matrix) */
-	REBUILD_FLAG_NEED_REBUILD = 1, //TODO: можно переписать как счетчик областей, которые надо проребилдить (мб поможет при атомарном снятии флага) + у Юли инкремент такого щетчика должен быть до выставления единичек
+	REBUILD_FLAG_NEED_REBUILD = 1,
 
 	/* if service start rebuild cycle */
 	REBUILD_FLAG_IN_PROGRESS = 2,
+
+	/* if service start rebuild cycle */
+	REBUILD_FLAG_FINISH = 3,
 
 	/* fatal error during rebuild cycle */
 	REBUILD_FLAG_FATAL_ERROR = 59,
@@ -85,11 +89,11 @@ struct raid_rebuild {
 	uint64_t			strips_per_area;
 
 	/* rebuild flag */
-	ATOMIC_DATA(rebuild_flag); //TODO: переписать на атомики
+	ATOMIC_DATA(rebuild_flag);
 
 	/* 
 	 * structure describing a specific rebuild 
-	 * (i.e. when cycle_progress == NULL, REBUILD_FLAG_IN_PROGRESS is omitted) 
+	 * (i.e. when cycle_progress == NULL) 
 	 */ 
 	struct rebuild_progress *cycle_progress;
 };
