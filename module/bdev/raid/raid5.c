@@ -1143,12 +1143,12 @@ raid5_stripe_req_complete(struct raid5_stripe_request *request)
 }
 
 static bool
-raid5_read_complete_part_final(struct raid5_stripe_request *request, uint64_t completed,
+raid5_read_complete_part(struct raid5_stripe_request *request, uint64_t completed,
 				enum spdk_bdev_io_status status)
 {
 	struct raid_bdev_io *raid_io = request->raid_io;
 
-	SPDK_ERRLOG("raid5_read_complete_part_final\n");
+	SPDK_ERRLOG("raid5_read_complete_part\n");
 
 	assert(raid_io->base_bdev_io_remaining >= completed);
 	raid_io->base_bdev_io_remaining -= completed;
@@ -1226,7 +1226,7 @@ static void raid5_read_cb(struct spdk_bdev_io *bdev_io, bool success, void *cb_a
 
 	spdk_bdev_free_io(bdev_io);
 
-	raid5_read_complete_part_final(request, 1, success ?
+	raid5_read_complete_part(request, 1, success ?
 					SPDK_BDEV_IO_STATUS_SUCCESS :
 					SPDK_BDEV_IO_STATUS_FAILED);
 }
@@ -1283,7 +1283,7 @@ raid5_read_req_strips(struct raid5_stripe_request *request)
 			base_bdev_io_not_submitted = ((estrip_idx + raid_bdev->num_base_bdevs) -
 							ststrip_idx) % raid_bdev->num_base_bdevs + 1 -
 							raid_io->base_bdev_io_submitted;
-			raid5_read_complete_part_final(request, base_bdev_io_not_submitted,
+			raid5_read_complete_part(request, base_bdev_io_not_submitted,
 							SPDK_BDEV_IO_STATUS_FAILED);
 			return;
 		}
@@ -1355,7 +1355,7 @@ raid5_read_except_one_req_strip(struct raid5_stripe_request *request)
 
 			base_bdev_io_not_submitted = raid_bdev->num_base_bdevs - 1 -
 							raid_io->base_bdev_io_submitted;
-			raid5_read_complete_part_final(request, base_bdev_io_not_submitted,
+			raid5_read_complete_part(request, base_bdev_io_not_submitted,
 							SPDK_BDEV_IO_STATUS_FAILED);
 			return;
 		}
