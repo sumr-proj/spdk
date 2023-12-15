@@ -1763,6 +1763,10 @@ raid5_write_default_reading(struct raid5_stripe_request *request)
 		num_blcks = raid5_num_blcks(bdev_io, raid_bdev, es_idx);
 	}
 
+	if (start_idx == ps_idx) {
+		start_idx = raid5_next_idx(start_idx, raid_bdev);
+	}
+
 	for (uint8_t idx = start_idx; idx != sts_idx; idx = raid5_next_idx(idx, raid_bdev)) {
 		if (idx == ps_idx) {
 			continue;
