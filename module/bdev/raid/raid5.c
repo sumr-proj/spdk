@@ -358,6 +358,14 @@ raid5_check_raid_ch(struct raid_bdev_io_channel *raid_ch)
 }
 
 static uint64_t
+raid5_stripe_idx(struct spdk_bdev_io *bdev_io, struct raid_bdev *raid_bdev)
+{
+	uint64_t start_strip_idx = bdev_io->u.bdev.offset_blocks >>
+					raid_bdev->strip_size_shift;
+	return start_strip_idx / (raid_bdev->num_base_bdevs - 1);
+}
+
+static uint64_t
 raid5_start_strip_idx(struct spdk_bdev_io *bdev_io, struct raid_bdev *raid_bdev)
 {
 	uint64_t start_strip_idx;
