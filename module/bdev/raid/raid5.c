@@ -1219,10 +1219,10 @@ raid5_read_complete_part_final(struct raid5_stripe_request *request, uint64_t co
 	}
 }
 
-static void raid5_read_complete_part(struct spdk_bdev_io *bdev_io, bool success, void *cb_arg) {
+static void raid5_read_cb(struct spdk_bdev_io *bdev_io, bool success, void *cb_arg) {
 	struct raid5_stripe_request *request = cb_arg;
 
-	SPDK_ERRLOG("raid5_read_complete_part\n");
+	SPDK_ERRLOG("raid5_read_cb\n");
 
 	spdk_bdev_free_io(bdev_io);
 
@@ -1270,7 +1270,7 @@ raid5_read_req_strips(struct raid5_stripe_request *request)
 											request->strip_buffs[idx], request->strip_buffs_cnts[idx],
 											raid5_ofs_blcks(bdev_io, raid_bdev, idx),
 											raid5_num_blcks(bdev_io, raid_bdev, idx),
-											raid5_read_complete_part,
+											raid5_read_cb,
 											request);
 
 		if (spdk_unlikely(ret != 0)) {
@@ -1343,7 +1343,7 @@ raid5_read_except_one_req_strip(struct raid5_stripe_request *request)
 		ret = spdk_bdev_readv_blocks(base_info->desc, base_ch,
 											request->strip_buffs[idx], request->strip_buffs_cnts[idx],
 											ofs_blcks, num_blcks,
-											raid5_read_complete_part,
+											raid5_read_cb,
 											request);
 
 		if (spdk_unlikely(ret != 0)) {
