@@ -877,9 +877,10 @@ raid5_set_all_strip_buffs(struct raid5_stripe_request *request, uint64_t ofs_blc
 
 	if (es_idx_extra == 1) {
 		request->strip_buffs[es_idx][request->strip_buffs_cnts[es_idx] - 1].iov_len =
-						ofs_blcks + num_blcks -
+						(ofs_blcks + num_blcks -
 						(raid5_ofs_blcks(bdev_io, raid_bdev, es_idx) +
-						raid5_num_blcks(bdev_io, raid_bdev, es_idx));
+						raid5_num_blcks(bdev_io, raid_bdev, es_idx))) *
+						block_size_b;
 		request->strip_buffs[es_idx][request->strip_buffs_cnts[es_idx] - 1].iov_base =
 						calloc(request->strip_buffs[es_idx][request->strip_buffs_cnts[es_idx]
 						- 1].iov_len,
