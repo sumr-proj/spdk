@@ -983,6 +983,44 @@ raid5_read_exc_req_strip_free_strip_buffs(struct raid5_stripe_request *request)
 	raid5_free_all_strip_buffs(request, ofs_blcks, num_blcks);
 }
 
+static int
+raid5_write_default_set_strip_buffs(struct raid5_stripe_request *request)
+{
+	struct spdk_bdev_io			*bdev_io = spdk_bdev_io_from_ctx(request->raid_io);
+	struct raid_bdev			*raid_bdev = request->raid_io->raid_bdev;
+	uint64_t			sts_idx = raid5_start_strip_idx(bdev_io, raid_bdev);
+	uint64_t			es_idx = raid5_end_strip_idx(bdev_io, raid_bdev);
+	uint64_t			es_ofs_blcks = raid5_ofs_blcks(bdev_io, raid_bdev, es_idx);
+	uint64_t			es_num_blcks = raid5_num_blcks(bdev_io, raid_bdev, es_idx);
+
+	SPDK_ERRLOG("raid5_write_default_set_strip_buffs\n");
+
+	if (sts_idx != es_idx) {
+		return raid5_set_all_strip_buffs(request, es_ofs_blcks, raid_bdev->strip_size);
+	} else {
+		return raid5_set_all_strip_buffs(request, es_ofs_blcks, es_num_blcks);
+	}
+}
+
+static void
+raid5_write_default_free_strip_buffs(struct raid5_stripe_request *request)
+{
+	struct spdk_bdev_io			*bdev_io = spdk_bdev_io_from_ctx(request->raid_io);
+	struct raid_bdev			*raid_bdev = request->raid_io->raid_bdev;
+	uint64_t			sts_idx = raid5_start_strip_idx(bdev_io, raid_bdev);
+	uint64_t			es_idx = raid5_end_strip_idx(bdev_io, raid_bdev);
+	uint64_t			es_ofs_blcks = raid5_ofs_blcks(bdev_io, raid_bdev, es_idx);
+	uint64_t			es_num_blcks = raid5_num_blcks(bdev_io, raid_bdev, es_idx);
+
+	SPDK_ERRLOG("raid5_write_default_free_strip_buffs\n");
+
+	if (sts_idx != es_idx) {
+		return raid5_free_all_strip_buffs(request, es_ofs_blcks, raid_bdev->strip_size);
+	} else {
+		return raid5_free_all_strip_buffs(request, es_ofs_blcks, es_num_blcks);
+	}
+}
+
 static void
 raid5_stripe_req_complete(struct raid5_stripe_request *request)
 {
