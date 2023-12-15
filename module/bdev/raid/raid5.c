@@ -1207,7 +1207,6 @@ raid5_read_complete_part(struct raid5_stripe_request *request, uint64_t complete
 			}
 
 			raid5_read_exc_req_strip_free_strip_buffs(request);
-			assert(0);
 		} else {
 			raid5_read_req_strips_free_strip_buffs(request);
 		}
