@@ -714,7 +714,7 @@ raid5_set_all_strip_buffs(struct raid5_stripe_request *request, uint64_t ofs_blc
 
 	SPDK_ERRLOG("raid5_set_all_strip_buffs\n");
 
-	// not req strip
+	// not req strip and parity strip
 	ret = raid5_allocate_strips_buffs_until(request, after_es_idx, sts_idx, num_blcks);
 	if (ret != 0) {
 		return ret;
