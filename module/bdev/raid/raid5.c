@@ -1037,6 +1037,101 @@ raid5_write_broken_parity_free_strip_buffs(struct raid5_stripe_request *request)
 	raid5_free_all_req_strips_iovs(request);
 }
 
+static int
+raid5_write_r_modify_w_set_strip_buffs(struct raid5_stripe_request *request)
+{
+	struct spdk_bdev_io			*bdev_io = spdk_bdev_io_from_ctx(request->raid_io);
+	struct raid_bdev			*raid_bdev = request->raid_io->raid_bdev;
+	uint64_t			sts_idx = raid5_start_strip_idx(bdev_io, raid_bdev);
+	uint64_t			sts_num_blcks = raid5_num_blcks(bdev_io, raid_bdev, sts_idx);
+	uint64_t			after_sts_idx = raid5_next_idx(sts_idx, raid_bdev);
+	uint64_t			es_idx = raid5_end_strip_idx(bdev_io, raid_bdev);
+	uint64_t			es_num_blcks = raid5_num_blcks(bdev_io, raid_bdev, es_idx);
+	uint64_t			after_es_idx = raid5_next_idx(es_idx, raid_bdev);
+	uint64_t			ps_idx = raid5_parity_strip_index(raid_bdev, raid5_stripe_idx(bdev_io, raid_bdev));
+	uint64_t			after_ps_idx = raid5_next_idx(ps_idx, raid_bdev);
+	int				ret = 0;
+
+	ret = raid5_allocate_strips_buffs_until(request, sts_idx, after_sts_idx, sts_num_blcks);
+	if (ret != 0) {
+		return ret;
+	}
+
+	if (sts_idx == es_idx) {
+		ret = raid5_allocate_strips_buffs_until(request, ps_idx, after_ps_idx, sts_num_blcks);
+		if (ret != 0) {
+			raid5_free_strips_buffs_until(request, sts_idx, after_sts_idx);
+		}
+		return ret;
+	} else {
+		ret = raid5_allocate_strips_buffs_until(request, ps_idx, after_ps_idx, raid_bdev->strip_size);
+		if (ret != 0) {
+			raid5_free_strips_buffs_until(request, sts_idx, after_sts_idx);
+			return ret;
+		}
+	}
+
+	ret = raid5_allocate_strips_buffs_until(request, after_sts_idx, es_idx, raid_bdev->strip_size);
+	if (ret != 0) {
+		raid5_free_strips_buffs_until(request, sts_idx, after_sts_idx);
+		raid5_free_strips_buffs_until(request, ps_idx, after_ps_idx);
+		return ret;
+	}
+
+	ret = raid5_allocate_strips_buffs_until(request, es_idx, after_es_idx, es_num_blcks);
+	if (ret != 0) {
+		raid5_free_strips_buffs_until(request, sts_idx, es_idx);
+		raid5_free_strips_buffs_until(request, ps_idx, after_ps_idx);
+	}
+	return ret;
+}
+
+static void
+raid5_w_r_modify_w_reading_free_strip_buffs(struct raid5_stripe_request *request)
+{
+	struct spdk_bdev_io			*bdev_io = spdk_bdev_io_from_ctx(request->raid_io);
+	struct raid_bdev			*raid_bdev = request->raid_io->raid_bdev;
+	uint64_t			sts_idx = raid5_start_strip_idx(bdev_io, raid_bdev);
+	uint64_t			after_es_idx = raid5_next_idx(raid5_end_strip_idx(bdev_io, raid_bdev), raid_bdev);
+	uint64_t			ps_idx = raid5_parity_strip_index(raid_bdev, raid5_stripe_idx(bdev_io, raid_bdev));
+	uint64_t			after_ps_idx = raid5_next_idx(ps_idx, raid_bdev);
+
+	raid5_free_strips_buffs_until(request, ps_idx, after_ps_idx);
+	raid5_free_strips_buffs_until(request, sts_idx, after_es_idx);
+}
+
+static int
+raid5_write_r_modify_w_reset_strip_buffs(struct raid5_stripe_request *request)
+{
+	struct spdk_bdev_io			*bdev_io = spdk_bdev_io_from_ctx(request->raid_io);
+	struct raid_bdev			*raid_bdev = request->raid_io->raid_bdev;
+	uint64_t			sts_idx = raid5_start_strip_idx(bdev_io, raid_bdev);
+	uint64_t			after_es_idx = raid5_next_idx(raid5_end_strip_idx(bdev_io, raid_bdev), raid_bdev);
+	uint64_t			ps_idx = raid5_parity_strip_index(raid_bdev, raid5_stripe_idx(bdev_io, raid_bdev));
+	uint64_t			after_ps_idx = raid5_next_idx(ps_idx, raid_bdev);
+	int				ret = 0;
+
+	raid5_free_strips_buffs_until(request, sts_idx, after_es_idx);
+	ret = raid5_set_all_req_strips_iovs(request);
+	if (ret != 0) {
+		SPDK_ERRLOG("chop chop\n");
+		raid5_free_strips_buffs_until(request, ps_idx, after_ps_idx);
+	}
+	return ret;
+}
+
+static void
+raid5_w_r_modify_w_writing_free_strip_buffs(struct raid5_stripe_request *request)
+{
+	struct spdk_bdev_io			*bdev_io = spdk_bdev_io_from_ctx(request->raid_io);
+	struct raid_bdev			*raid_bdev = request->raid_io->raid_bdev;
+	uint64_t			ps_idx = raid5_parity_strip_index(raid_bdev, raid5_stripe_idx(bdev_io, raid_bdev));
+	uint64_t			after_ps_idx = raid5_next_idx(ps_idx, raid_bdev);
+
+	raid5_free_strips_buffs_until(request, ps_idx, after_ps_idx);
+	raid5_free_all_req_strips_iovs(request);
+}
+
 static void
 raid5_stripe_req_complete(struct raid5_stripe_request *request)
 {
