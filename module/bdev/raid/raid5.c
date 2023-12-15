@@ -1793,6 +1793,44 @@ raid5_write_default_reading(struct raid5_stripe_request *request)
 	}
 }
 
+static bool
+raid5_w_broken_ps_complete_part(struct raid5_stripe_request *request, uint64_t completed,
+				enum spdk_bdev_io_status status)
+{
+	struct raid_bdev_io *raid_io = request->raid_io;
+
+	SPDK_ERRLOG("raid5_w_broken_ps_complete_part\n");
+
+	assert(raid_io->base_bdev_io_remaining >= completed);
+	raid_io->base_bdev_io_remaining -= completed;
+
+	if (status != SPDK_BDEV_IO_STATUS_SUCCESS) {
+		raid_io->base_bdev_io_status = status;
+	}
+
+	if (raid_io->base_bdev_io_remaining == 0) {
+		raid5_write_broken_parity_free_strip_buffs(request);
+		raid5_stripe_req_complete(request);
+
+		return true;
+	} else {
+		return false;
+	}
+}
+
+static void
+raid5_w_broken_ps_cb(struct spdk_bdev_io *bdev_io, bool success, void *cb_arg) {
+	struct raid5_stripe_request *request = cb_arg;
+
+	SPDK_ERRLOG("raid5_w_broken_ps_cb\n");
+
+	spdk_bdev_free_io(bdev_io);
+
+	raid5_w_broken_ps_complete_part(request, 1, success ?
+					SPDK_BDEV_IO_STATUS_SUCCESS :
+					SPDK_BDEV_IO_STATUS_FAILED);
+}
+
 static void raid5_submit_rw_request(struct raid_bdev_io *raid_io);
 
 static void
