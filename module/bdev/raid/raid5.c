@@ -544,13 +544,13 @@ raid5_free_stripe_request(struct raid5_stripe_request *request) {
 }
 
 static int
-raid5_get_strips_buffs_until(struct raid5_stripe_request *request,
+raid5_allocate_strips_buffs_until(struct raid5_stripe_request *request,
 				uint8_t start_idx, uint8_t until_idx, uint64_t num_blcks)
 {
 	struct raid_bdev *raid_bdev = request->raid_io->raid_bdev;
 	uint64_t block_size_b = ((uint64_t)1024 * raid_bdev->strip_size_kb) / raid_bdev->strip_size;
 
-	SPDK_ERRLOG("raid5_get_strips_buffs_until\n");
+	SPDK_ERRLOG("raid5_allocate_strips_buffs_until\n");
 
 	for (uint8_t idx = start_idx; idx != until_idx; idx = raid5_next_idx(idx, raid_bdev)) {
 		request->strip_buffs_cnts[idx] = 1;
@@ -689,7 +689,7 @@ raid5_set_all_strip_buffs(struct raid5_stripe_request *request, uint64_t ofs_blc
 	SPDK_ERRLOG("raid5_set_all_strip_buffs\n");
 
 	// not req strip
-	ret = raid5_get_strips_buffs_until(request, after_es_idx, sts_idx, num_blcks);
+	ret = raid5_allocate_strips_buffs_until(request, after_es_idx, sts_idx, num_blcks);
 	if (ret != 0) {
 		return ret;
 	}
