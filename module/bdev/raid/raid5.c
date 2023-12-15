@@ -2216,6 +2216,92 @@ raid5_write_r_modify_w_reading(struct raid5_stripe_request *request)
 	}
 }
 
+static void
+raid5_submit_write_request(struct raid5_stripe_request *request)
+{
+	struct raid_bdev_io 		*raid_io = request->raid_io;
+	struct spdk_bdev_io			*bdev_io = spdk_bdev_io_from_ctx(raid_io);
+	struct raid_bdev			*raid_bdev = raid_io->raid_bdev;
+	struct raid5_info			*r5_info = raid_bdev->module_private;
+	struct raid_bdev_io_channel	*raid_ch = raid_io->raid_ch;
+	struct spdk_io_channel		*base_ch;
+	uint64_t			sts_idx = raid5_start_strip_idx(bdev_io, raid_bdev);
+	uint64_t			es_idx = raid5_end_strip_idx(bdev_io, raid_bdev);
+	uint8_t				after_es_idx = raid5_next_idx(es_idx, raid_bdev);
+	uint8_t				ps_idx = raid5_parity_strip_index(raid_bdev, raid5_stripe_idx(bdev_io, raid_bdev));
+	int				ret = 0;
+
+	for (uint8_t idx = 0; idx < raid_bdev->num_base_bdevs; ++idx) {
+		base_ch = raid_ch->base_channel[idx];
+		
+		if (base_ch == NULL) {
+			if (request->broken_strip_idx == raid_bdev->num_base_bdevs) {
+				request->broken_strip_idx = idx;
+			} else {
+				SPDK_ERRLOG("RAID5 write request: 2 broken strips\n");
+				raid_io->base_bdev_io_status = SPDK_BDEV_IO_STATUS_FAILED;
+				raid5_stripe_req_complete(request);
+				assert(false);
+				return;
+			}
+		}
+	}
+
+	if (request->broken_strip_idx == raid_bdev->num_base_bdevs &&
+				r5_info->write_type == DEFAULT) {
+		// default
+
+		ret = raid5_write_default_set_strip_buffs(request);
+		if (spdk_unlikely(ret != 0)) {
+			SPDK_ERRLOG("RAID5 write request: allocation of buffers is failed\n");
+			raid_io->base_bdev_io_status = SPDK_BDEV_IO_STATUS_FAILED;
+			raid5_stripe_req_complete(request);
+			return;
+		}
+
+		raid_io->base_bdev_io_submitted = 0;
+		raid_io->base_bdev_io_remaining = raid_bdev->num_base_bdevs - (((es_idx + raid_bdev->num_base_bdevs) -
+				sts_idx) % raid_bdev->num_base_bdevs) - 2;
+		if (sts_idx != es_idx) {
+			raid_io->base_bdev_io_remaining +=2;
+		}
+		raid5_write_default_reading(request);
+	} else if (request->broken_strip_idx == ps_idx) {
+		// broken parity strip
+
+		ret = raid5_write_broken_parity_set_strip_buffs(request);
+		if (spdk_unlikely(ret != 0)) {
+			SPDK_ERRLOG("RAID5 write request: allocation of buffers is failed\n");
+			raid_io->base_bdev_io_status = SPDK_BDEV_IO_STATUS_FAILED;
+			raid5_stripe_req_complete(request);
+			return;
+		}
+
+		raid_io->base_bdev_io_submitted = 0;
+		raid_io->base_bdev_io_remaining = ((es_idx + raid_bdev->num_base_bdevs) -
+				sts_idx) % raid_bdev->num_base_bdevs + 1;
+		raid5_write_broken_parity_strip(request);
+	} else if (request->broken_strip_idx == raid_bdev->num_base_bdevs ||
+					!raid5_is_req_strip(sts_idx, es_idx,request->broken_strip_idx)) {
+		// read-modify-write
+
+		ret = raid5_write_r_modify_w_set_strip_buffs(request);
+		if (spdk_unlikely(ret != 0)) {
+			SPDK_ERRLOG("RAID5 write request: allocation of buffers is failed\n");
+			raid_io->base_bdev_io_status = SPDK_BDEV_IO_STATUS_FAILED;
+			raid5_stripe_req_complete(request);
+			return;
+		}
+
+		raid_io->base_bdev_io_submitted = 0;
+		raid_io->base_bdev_io_remaining = ((es_idx + raid_bdev->num_base_bdevs) -
+				sts_idx) % raid_bdev->num_base_bdevs + 2;
+		raid5_write_r_modify_w_reading(request);
+	} else {
+		// broken req strip
+	}
+}
+
 static void raid5_submit_rw_request(struct raid_bdev_io *raid_io);
 
 static void
