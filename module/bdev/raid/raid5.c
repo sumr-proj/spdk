@@ -1021,6 +1021,22 @@ raid5_write_default_free_strip_buffs(struct raid5_stripe_request *request)
 	}
 }
 
+static int
+raid5_write_broken_parity_set_strip_buffs(struct raid5_stripe_request *request)
+{
+	SPDK_ERRLOG("raid5_write_broken_parity_set_strip_buffs\n");
+
+	return raid5_set_all_req_strips_iovs(request);
+}
+
+static void
+raid5_write_broken_parity_free_strip_buffs(struct raid5_stripe_request *request)
+{
+	SPDK_ERRLOG("raid5_write_broken_parity_free_strip_buffs\n");
+	
+	raid5_free_all_req_strips_iovs(request);
+}
+
 static void
 raid5_stripe_req_complete(struct raid5_stripe_request *request)
 {
