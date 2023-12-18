@@ -10,13 +10,14 @@
 
 #include "spdk/bdev_module.h"
 #include "spdk/uuid.h"
+#include "atomic_raid.h"
 
 enum rebuild_flag {
 	/* rebuild flag set during initialization */
-	REBUILD_FLAG_INIT_CONFIGURATION = 0,
-
+	REBUILD_FLAG_INIT_CONFIGURATION = 0UL,
+	
 	/* if there is at least one broken area in rbm(rebuild_matrix) */
-	REBUILD_FLAG_NEED_REBUILD = 1,
+	REBUILD_FLAG_NEED_REBUILD = 1UL,
 };
 
 enum raid_level {
@@ -58,7 +59,7 @@ typedef void (*raid_bdev_remove_base_bdev_cb)(void *ctx, int status);
  */
 struct raid_rebuild {
 	/* stores data on broken memory areas */
-	uint64_t rebuild_matrix[MATRIX_REBUILD_SIZE];
+	raid_atomic64 rebuild_matrix[MATRIX_REBUILD_SIZE];
 
 	/* number of memory areas */
 	uint64_t			num_memory_areas;
@@ -67,7 +68,7 @@ struct raid_rebuild {
 	uint64_t			strips_per_area;
 
 	/* rebuild flag */
-	uint64_t			rebuild_flag;
+	raid_atomic64			rebuild_flag;
 };
 
 /*

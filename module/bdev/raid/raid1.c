@@ -55,29 +55,14 @@ static void
 write_in_rbm_broken_block(struct spdk_bdev_io *bdev_io, struct raid_bdev_io *raid_io,
 			  uint32_t bdev_idx)
 {
+	raid_atomic64_set(&raid_io->raid_bdev->rebuild->rebuild_flag, REBUILD_FLAG_NEED_REBUILD);
 	uint64_t offset_areas = 0;
 	uint64_t num_areas = 0;
 
 	get_io_area_range(bdev_io, raid_io->raid_bdev, &offset_areas, &num_areas);
 	for (uint64_t i = offset_areas; i < offset_areas + num_areas; i++) {
-		uint64_t *area = &raid_io->raid_bdev->rebuild->rebuild_matrix[i];
-		SPDK_SET_BIT(area, bdev_idx);
-	}
-}
-
-/* Determine if a device needs a rebuild or not */
-static void
-get_bdev_rebuild_status(struct raid_bdev *raid_bdev, struct spdk_bdev_io *bdev_io, uint8_t bdev_idx)
-{
-	uint64_t offset_areas = 0;
-	uint64_t num_areas = 0;
-
-	get_io_area_range(bdev_io, raid_bdev, &offset_areas, &num_areas);
-	for (uint64_t i = offset_areas; i < offset_areas + num_areas; i++) {
-		uint64_t area = raid_bdev->rebuild->rebuild_matrix[i];
-		if (SPDK_TEST_BIT(&area, bdev_idx)) {
-			SPDK_SET_BIT(&(raid_bdev->rebuild->rebuild_flag), REBUILD_FLAG_NEED_REBUILD);
-		}
+		raid_atomic64 *area = &raid_io->raid_bdev->rebuild->rebuild_matrix[i];
+		raid_atomic64_set_bit(area, bdev_idx);
 	}
 }
 
@@ -135,7 +120,6 @@ raid1_submit_read_request(struct raid_bdev_io *raid_io)
 	RAID_FOR_EACH_BASE_BDEV(raid_bdev, base_info) {
 		base_ch = raid_io->raid_ch->base_channel[idx];
 		if (base_ch != NULL) {
-			get_bdev_rebuild_status(raid_bdev, bdev_io, idx);
 			if (raid_bdev->rebuild->rebuild_flag != REBUILD_FLAG_INIT_CONFIGURATION) {
 				break;
 			}
