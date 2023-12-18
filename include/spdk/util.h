@@ -46,6 +46,8 @@ extern "C" {
 
 #define SPDK_SET_BIT(number_ptr, shift_size) (*(number_ptr) |= 1UL << shift_size)
 
+#define SPDK_REMOVE_BIT(number_ptr, shift_size) (*(number_ptr) &= ~(1UL << shift_size))
+
 #define SPDK_KB_TO_B(number) (number << 10)
 
 /**
