@@ -461,8 +461,6 @@ raid5_xor_iovs_with_iovs(struct iovec *xor_iovs, int xor_iovcnt, uint64_t xor_of
 	uint64_t xor_idx = 0;
 	uint64_t idx = 0;
 
-	SPDK_ERRLOG("raid5_xor_iovs_with_iovs\n");
-
 	while (xofs8 >= xor_iovs[xor_idx].iov_len / 8) {
 		xofs8 -= xor_iovs[xor_idx].iov_len / 8;
 		++xor_idx;
@@ -480,31 +478,54 @@ raid5_xor_iovs_with_iovs(struct iovec *xor_iovs, int xor_iovcnt, uint64_t xor_of
 		b8 = &b8[ofs8];
 		if (xor_iovs[xor_idx].iov_len / 8 - xofs8 >
 				iovs[idx].iov_len / 8 - ofs8) {
-			for (uint64_t i = ofs8; i < (iovs[idx].iov_len / 8); ++i) {
-				xb8[i - ofs8 + xofs8] ^= b8[i];
+			if (num_b8 + ofs8 < iovs[idx].iov_len / 8) {
+				for (uint64_t i = 0; i < num_b8; ++i) {
+					xb8[i] ^= b8[i];
+				}
+				num_b8 = 0;
+			} else {
+				for (uint64_t i = 0; i < (iovs[idx].iov_len / 8) - ofs8; ++i) {
+					xb8[i] ^= b8[i];
+				}
+				num_b8 -= iovs[idx].iov_len / 8 - ofs8;
+				xofs8 += iovs[idx].iov_len / 8 - ofs8;
+				++idx;
+				ofs8 = 0;
 			}
-			num_b8 -= iovs[idx].iov_len / 8 - ofs8;
-			++idx;
-			ofs8 = 0;
 		} else if (xor_iovs[xor_idx].iov_len / 8 - xofs8 <
 				iovs[idx].iov_len / 8 - ofs8) {
-			for (uint64_t i = xofs8; i < (xor_iovs[xor_idx].iov_len / 8); ++i) {
-				xb8[i] ^= b8[i - xofs8 + ofs8];
+			if (num_b8 + xofs8 < xor_iovs[xor_idx].iov_len / 8) {
+				for (uint64_t i = 0; i < num_b8; ++i) {
+					xb8[i] ^= b8[i];
+				}
+				num_b8 = 0;
+			} else {
+				for (uint64_t i = 0; i < (xor_iovs[xor_idx].iov_len / 8) - xofs8; ++i) {
+					xb8[i] ^= b8[i];
+				}
+				num_b8 -= xor_iovs[xor_idx].iov_len / 8 - xofs8;
+				ofs8 += xor_iovs[xor_idx].iov_len / 8 - xofs8;
+				++xor_idx;
+				xofs8 = 0;
 			}
-			num_b8 -= xor_iovs[xor_idx].iov_len / 8 - xofs8;
-			++xor_idx;
-			xofs8 = 0;
 		} else {
-			for (uint64_t i = ofs8; i < (iovs[idx].iov_len / 8); ++i) {
-				xb8[i - ofs8 + xofs8] ^= b8[i];
+			if (num_b8 + ofs8 < iovs[idx].iov_len / 8) {
+				for (uint64_t i = 0; i < num_b8; ++i) {
+					xb8[i] ^= b8[i];
+				}
+				num_b8 = 0;
+			} else {
+				for (uint64_t i = 0; i < (iovs[idx].iov_len / 8)- ofs8; ++i) {
+					xb8[i] ^= b8[i];
+				}
+				num_b8 -= iovs[idx].iov_len / 8 - ofs8;
+				++idx;
+				ofs8 = 0;
+				++xor_idx;
+				xofs8 = 0;
 			}
-			num_b8 -= iovs[idx].iov_len / 8 - ofs8;
-			++idx;
-			ofs8 = 0;
-			++xor_idx;
-			xofs8 = 0;
 		}
-	}	
+	}
 }
 
 static struct raid5_stripe_request *
