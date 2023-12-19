@@ -2696,6 +2696,176 @@ raid5_w_br_r_reading_cb(struct spdk_bdev_io *bdev_io, bool success, void *cb_arg
 					SPDK_BDEV_IO_STATUS_FAILED);
 }
 
+static void raid5_write_broken_req_reading(struct raid5_stripe_request *request);
+
+static void
+_raid5_write_broken_req_reading(void *cb_arg)
+{
+	struct raid5_stripe_request *request = cb_arg;
+	raid5_write_broken_req_reading(request);
+}
+
+static void
+raid5_write_broken_req_reading(struct raid5_stripe_request *request)
+{
+	struct raid_bdev_io 		*raid_io = request->raid_io;
+	struct spdk_bdev_io			*bdev_io = spdk_bdev_io_from_ctx(raid_io);
+	struct raid_bdev			*raid_bdev = raid_io->raid_bdev;
+	struct raid_bdev_io_channel	*raid_ch = raid_io->raid_ch;
+	struct raid_base_bdev_info	*base_info;
+	struct spdk_io_channel		*base_ch;
+	uint64_t			sts_idx = raid5_start_strip_idx(bdev_io, raid_bdev);
+	uint64_t			after_sts_idx = raid5_next_idx(sts_idx, raid_bdev);
+	uint64_t			es_idx = raid5_end_strip_idx(bdev_io, raid_bdev);
+	uint64_t			after_es_idx = raid5_next_idx(es_idx, raid_bdev);
+	uint64_t			ps_idx = raid5_parity_strip_index(raid_bdev, raid5_stripe_idx(bdev_io, raid_bdev));
+	uint64_t			num_strips_to_r;
+	uint64_t			base_bdev_io_not_submitted;
+	uint64_t			ofs_blcks;
+	uint64_t			num_blcks;
+	uint8_t				start_idx;
+	int				ret = 0;
+
+	if (sts_idx == es_idx) {
+		num_strips_to_r = raid_bdev->num_base_bdevs - 2;
+		start_idx = (after_sts_idx + raid_io->base_bdev_io_submitted) % raid_bdev->num_base_bdevs;
+		if (start_idx == ps_idx) {
+			start_idx = raid5_next_idx(start_idx, raid_bdev);
+		}
+		ofs_blcks = raid5_ofs_blcks(bdev_io, raid_bdev, sts_idx);
+		num_blcks = raid5_num_blcks(bdev_io, raid_bdev, sts_idx);
+
+		for (uint8_t idx = start_idx; idx != sts_idx; idx = raid5_next_idx(idx, raid_bdev)) {
+			if (idx == ps_idx) {
+				continue;
+			}
+			base_info = &raid_bdev->base_bdev_info[idx];
+			base_ch = raid_ch->base_channel[idx];
+
+			ret = spdk_bdev_readv_blocks(base_info->desc, base_ch,
+												request->strip_buffs[idx], request->strip_buffs_cnts[idx],
+												ofs_blcks, num_blcks,
+												raid5_w_br_r_reading_cb,
+												request);
+
+			if (spdk_unlikely(ret != 0)) {
+				if (spdk_unlikely(ret == -ENOMEM)) {
+					raid5_queue_io_wait(raid_io, spdk_bdev_desc_get_bdev(base_info->desc),
+								base_ch, _raid5_write_broken_req_reading, request);
+					return;
+				}
+
+				base_bdev_io_not_submitted = num_strips_to_r - raid_io->base_bdev_io_submitted;
+				raid5_w_br_r_reading_complete_part(request, base_bdev_io_not_submitted,
+								SPDK_BDEV_IO_STATUS_FAILED);
+				return;
+			}
+
+			++raid_io->base_bdev_io_submitted;
+		}
+	} else if (request->broken_strip_idx != sts_idx && request->broken_strip_idx != es_idx) {
+		num_strips_to_r = raid_bdev->num_base_bdevs - (((es_idx + raid_bdev->num_base_bdevs) -
+					sts_idx) % raid_bdev->num_base_bdevs);
+		start_idx = (es_idx + raid_io->base_bdev_io_submitted) % raid_bdev->num_base_bdevs;
+		if (start_idx == ps_idx) {
+			start_idx = raid5_next_idx(start_idx, raid_bdev);
+		}
+		ofs_blcks = raid5_ofs_blcks(bdev_io, raid_bdev, es_idx);
+		num_blcks = raid_bdev->strip_size;
+
+		for (uint8_t idx = start_idx; idx != after_sts_idx; idx = raid5_next_idx(idx, raid_bdev)) {
+			if (idx == ps_idx) {
+				continue;
+			}
+			base_info = &raid_bdev->base_bdev_info[idx];
+			base_ch = raid_ch->base_channel[idx];
+
+			ret = spdk_bdev_readv_blocks(base_info->desc, base_ch,
+												request->strip_buffs[idx], request->strip_buffs_cnts[idx],
+												ofs_blcks, num_blcks,
+												raid5_w_br_r_reading_cb,
+												request);
+
+			if (spdk_unlikely(ret != 0)) {
+				if (spdk_unlikely(ret == -ENOMEM)) {
+					raid5_queue_io_wait(raid_io, spdk_bdev_desc_get_bdev(base_info->desc),
+								base_ch, _raid5_write_broken_req_reading, request);
+					return;
+				}
+
+				base_bdev_io_not_submitted = num_strips_to_r - raid_io->base_bdev_io_submitted;
+				raid5_w_br_r_reading_complete_part(request, base_bdev_io_not_submitted,
+								SPDK_BDEV_IO_STATUS_FAILED);
+				return;
+			}
+
+			++raid_io->base_bdev_io_submitted;
+		}
+	} else if (request->broken_strip_idx == sts_idx) {
+		num_strips_to_r = raid_bdev->num_base_bdevs - 1;
+		start_idx = (after_sts_idx + raid_io->base_bdev_io_submitted) % raid_bdev->num_base_bdevs;
+		ofs_blcks = raid5_ofs_blcks(bdev_io, raid_bdev, es_idx);
+		num_blcks = raid_bdev->strip_size;
+
+		for (uint8_t idx = start_idx; idx != sts_idx; idx = raid5_next_idx(idx, raid_bdev)) {
+			base_info = &raid_bdev->base_bdev_info[idx];
+			base_ch = raid_ch->base_channel[idx];
+
+			ret = spdk_bdev_readv_blocks(base_info->desc, base_ch,
+												request->strip_buffs[idx], request->strip_buffs_cnts[idx],
+												ofs_blcks, num_blcks,
+												raid5_w_br_r_reading_cb,
+												request);
+
+			if (spdk_unlikely(ret != 0)) {
+				if (spdk_unlikely(ret == -ENOMEM)) {
+					raid5_queue_io_wait(raid_io, spdk_bdev_desc_get_bdev(base_info->desc),
+								base_ch, _raid5_write_broken_req_reading, request);
+					return;
+				}
+
+				base_bdev_io_not_submitted = num_strips_to_r - raid_io->base_bdev_io_submitted;
+				raid5_w_br_r_reading_complete_part(request, base_bdev_io_not_submitted,
+								SPDK_BDEV_IO_STATUS_FAILED);
+				return;
+			}
+
+			++raid_io->base_bdev_io_submitted;
+		}
+	} else {
+		num_strips_to_r = raid_bdev->num_base_bdevs - 1;
+		start_idx = (after_es_idx + raid_io->base_bdev_io_submitted) % raid_bdev->num_base_bdevs;
+		ofs_blcks = raid5_ofs_blcks(bdev_io, raid_bdev, es_idx);
+		num_blcks = raid_bdev->strip_size;
+
+		for (uint8_t idx = start_idx; idx != es_idx; idx = raid5_next_idx(idx, raid_bdev)) {
+			base_info = &raid_bdev->base_bdev_info[idx];
+			base_ch = raid_ch->base_channel[idx];
+
+			ret = spdk_bdev_readv_blocks(base_info->desc, base_ch,
+												request->strip_buffs[idx], request->strip_buffs_cnts[idx],
+												ofs_blcks, num_blcks,
+												raid5_w_br_r_reading_cb,
+												request);
+
+			if (spdk_unlikely(ret != 0)) {
+				if (spdk_unlikely(ret == -ENOMEM)) {
+					raid5_queue_io_wait(raid_io, spdk_bdev_desc_get_bdev(base_info->desc),
+								base_ch, _raid5_write_broken_req_reading, request);
+					return;
+				}
+
+				base_bdev_io_not_submitted = num_strips_to_r - raid_io->base_bdev_io_submitted;
+				raid5_w_br_r_reading_complete_part(request, base_bdev_io_not_submitted,
+								SPDK_BDEV_IO_STATUS_FAILED);
+				return;
+			}
+
+			++raid_io->base_bdev_io_submitted;
+		}
+	}
+}
+
 static void
 raid5_submit_write_request(struct raid5_stripe_request *request)
 {
