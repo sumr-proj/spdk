@@ -2949,6 +2949,26 @@ raid5_submit_write_request(struct raid5_stripe_request *request)
 		raid5_write_r_modify_w_reading(request);
 	} else {
 		// broken req strip
+		
+		ret = raid5_write_broken_req_set_strip_buffs(request);
+		if (spdk_unlikely(ret != 0)) {
+			SPDK_ERRLOG("RAID5 write request: allocation of buffers is failed\n");
+			raid_io->base_bdev_io_status = SPDK_BDEV_IO_STATUS_FAILED;
+			raid5_stripe_req_complete(request);
+			return;
+		}
+
+		raid_io->base_bdev_io_submitted = 0;
+		if (sts_idx == es_idx) {
+			raid_io->base_bdev_io_remaining = raid_bdev->num_base_bdevs - 2;
+		} else if (request->broken_strip_idx != sts_idx && request->broken_strip_idx != es_idx) {
+			raid_io->base_bdev_io_remaining = raid_bdev->num_base_bdevs - (((es_idx + raid_bdev->num_base_bdevs) -
+							sts_idx) % raid_bdev->num_base_bdevs);
+		} else {
+			raid_io->base_bdev_io_remaining = raid_bdev->num_base_bdevs - 1;
+		}
+
+		raid5_write_broken_req_reading(request);
 	}
 }
 
