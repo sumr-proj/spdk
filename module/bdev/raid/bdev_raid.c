@@ -951,12 +951,7 @@ raid_bdev_create(const char *name, uint32_t strip_size, uint8_t num_base_bdevs,
 		return -EEXIST;
 	}
 
-	if (level == RAID1) {
-		if (strip_size != 0) {
-			SPDK_ERRLOG("Strip size is not supported by raid1\n");
-			return -EINVAL;
-		}
-	} else if (spdk_u32_is_pow2(strip_size) == false) {
+	if (spdk_u32_is_pow2(strip_size) == false) {
 		SPDK_ERRLOG("Invalid strip size %" PRIu32 "\n", strip_size);
 		return -EINVAL;
 	}
@@ -1006,6 +1001,13 @@ raid_bdev_create(const char *name, uint32_t strip_size, uint8_t num_base_bdevs,
 	raid_bdev = calloc(1, sizeof(*raid_bdev));
 	if (!raid_bdev) {
 		SPDK_ERRLOG("Unable to allocate memory for raid bdev\n");
+		return -ENOMEM;
+	}
+
+	/* allocate rebuild struct  */
+	raid_bdev->rebuild = calloc(1, sizeof(struct raid_rebuild));
+	if (!raid_bdev->rebuild) {
+		SPDK_ERRLOG("Unable to allocate memory for raid rebuild struct\n");
 		return -ENOMEM;
 	}
 

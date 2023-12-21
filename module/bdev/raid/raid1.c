@@ -2,23 +2,83 @@
  *   Copyright (C) 2022 Intel Corporation.
  *   All rights reserved.
  */
-
 #include "bdev_raid.h"
 
 #include "spdk/likely.h"
 #include "spdk/log.h"
+#include "spdk/util.h"
 
 struct raid1_info {
 	/* The parent raid bdev */
 	struct raid_bdev *raid_bdev;
 };
 
+/* Find the bdev index of the current IO request */
+static uint32_t
+get_current_bdev_idx(struct spdk_bdev_io *bdev_io, struct raid_bdev_io *raid_io, uint32_t *bdev_idx)
+{
+	for (uint8_t i = 0; i < raid_io->raid_bdev->num_base_bdevs; i++) {
+		if (raid_io->raid_bdev->base_bdev_info[i].name == bdev_io->bdev->name) {
+			*bdev_idx = i;
+			return 0;
+		}
+	}
+	return -ENODEV;
+}
+
+/* Allows to define the memory_rebuild_areas that are involved in current IO request */
+static void
+get_io_area_range(struct spdk_bdev_io *bdev_io, struct raid_bdev *raid_bdev, uint64_t *offset,
+		  uint64_t *num)
+{
+	/* blocks */
+	uint64_t offset_blocks = bdev_io->u.bdev.offset_blocks;
+	uint64_t num_blocks = bdev_io->u.bdev.num_blocks;
+
+	/* blocks -> strips */
+	uint64_t offset_strips = (offset_blocks) / raid_bdev->strip_size;
+	uint64_t num_strips = SPDK_CEIL_DIV(offset_blocks + num_blocks,
+					    raid_bdev->strip_size) - offset_strips;
+
+	/* strips -> areas */
+	uint64_t strips_per_area = raid_bdev->rebuild->strips_per_area;
+
+	uint64_t offset_areas = offset_strips / strips_per_area;
+	uint64_t num_areas = SPDK_CEIL_DIV(offset_strips + num_strips, strips_per_area) - offset_areas;
+
+	*offset = offset_areas;
+	*num = num_areas;
+}
+
+/* Write a broken block to the rebuild_matrix */
+static void
+write_in_rbm_broken_block(struct spdk_bdev_io *bdev_io, struct raid_bdev_io *raid_io,
+			  uint32_t bdev_idx)
+{
+	raid_atomic64_set(&raid_io->raid_bdev->rebuild->rebuild_flag, REBUILD_FLAG_NEED_REBUILD);
+	uint64_t offset_areas = 0;
+	uint64_t num_areas = 0;
+
+	get_io_area_range(bdev_io, raid_io->raid_bdev, &offset_areas, &num_areas);
+	for (uint64_t i = offset_areas; i < offset_areas + num_areas; i++) {
+		raid_atomic64 *area = &raid_io->raid_bdev->rebuild->rebuild_matrix[i];
+		raid_atomic64_set_bit(area, bdev_idx);
+	}
+}
+
 static void
 raid1_bdev_io_completion(struct spdk_bdev_io *bdev_io, bool success, void *cb_arg)
 {
 	struct raid_bdev_io *raid_io = cb_arg;
+	uint32_t bdev_idx = 0;
+
+	get_current_bdev_idx(bdev_io, raid_io, &bdev_idx);
 
 	spdk_bdev_free_io(bdev_io);
+
+	if (!success) {
+		write_in_rbm_broken_block(bdev_io, raid_io, bdev_idx);
+	}
 
 	raid_bdev_io_complete_part(raid_io, 1, success ?
 				   SPDK_BDEV_IO_STATUS_SUCCESS :
@@ -60,7 +120,10 @@ raid1_submit_read_request(struct raid_bdev_io *raid_io)
 	RAID_FOR_EACH_BASE_BDEV(raid_bdev, base_info) {
 		base_ch = raid_io->raid_ch->base_channel[idx];
 		if (base_ch != NULL) {
-			break;
+			if (raid_bdev->rebuild->rebuild_flag != REBUILD_FLAG_INIT_CONFIGURATION) {
+				break;
+			}
+			base_ch = NULL;
 		}
 		idx++;
 	}
@@ -118,8 +181,10 @@ raid1_submit_write_request(struct raid_bdev_io *raid_io)
 		base_ch = raid_io->raid_ch->base_channel[idx];
 
 		if (base_ch == NULL) {
-			/* skip a missing base bdev's slot */
 			raid_io->base_bdev_io_submitted++;
+
+			write_in_rbm_broken_block(bdev_io, raid_io, idx);
+
 			raid_bdev_io_complete_part(raid_io, 1, SPDK_BDEV_IO_STATUS_SUCCESS);
 			continue;
 		}
@@ -175,6 +240,26 @@ raid1_submit_rw_request(struct raid_bdev_io *raid_io)
 	}
 }
 
+static void
+init_rebuild(struct raid_bdev *raid_bdev)
+{
+	raid_bdev->rebuild->num_memory_areas = MATRIX_REBUILD_SIZE;
+	uint64_t stripcnt = SPDK_CEIL_DIV(raid_bdev->bdev.blockcnt, raid_bdev->strip_size);
+	raid_bdev->rebuild->strips_per_area = SPDK_CEIL_DIV(stripcnt, MATRIX_REBUILD_SIZE);
+	raid_bdev->rebuild->rebuild_flag = REBUILD_FLAG_INIT_CONFIGURATION;
+}
+
+static void
+destruct_rebuild(struct raid_bdev *raid_bdev)
+{
+	struct raid_rebuild *r1rebuild = raid_bdev->rebuild;
+
+	if (r1rebuild != NULL) {
+		free(r1rebuild);
+		raid_bdev->rebuild = NULL;
+	}
+}
+
 static int
 raid1_start(struct raid_bdev *raid_bdev)
 {
@@ -196,6 +281,8 @@ raid1_start(struct raid_bdev *raid_bdev)
 	raid_bdev->bdev.blockcnt = min_blockcnt;
 	raid_bdev->module_private = r1info;
 
+	init_rebuild(raid_bdev);
+
 	return 0;
 }
 
@@ -205,6 +292,8 @@ raid1_stop(struct raid_bdev *raid_bdev)
 	struct raid1_info *r1info = raid_bdev->module_private;
 
 	free(r1info);
+
+	destruct_rebuild(raid_bdev);
 
 	return true;
 }

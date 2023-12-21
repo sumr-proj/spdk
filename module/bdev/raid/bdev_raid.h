@@ -6,8 +6,19 @@
 #ifndef SPDK_BDEV_RAID_INTERNAL_H
 #define SPDK_BDEV_RAID_INTERNAL_H
 
+#define MATRIX_REBUILD_SIZE 32768 /* 2^15 */
+
 #include "spdk/bdev_module.h"
 #include "spdk/uuid.h"
+#include "atomic_raid.h"
+
+enum rebuild_flag {
+	/* rebuild flag set during initialization */
+	REBUILD_FLAG_INIT_CONFIGURATION = 0UL,
+	
+	/* if there is at least one broken area in rbm(rebuild_matrix) */
+	REBUILD_FLAG_NEED_REBUILD = 1UL,
+};
 
 enum raid_level {
 	INVALID_RAID_LEVEL	= -1,
@@ -42,6 +53,23 @@ enum raid_bdev_state {
 };
 
 typedef void (*raid_bdev_remove_base_bdev_cb)(void *ctx, int status);
+
+/*
+ * raid_rebuild assists in the raid bdev rebuild process.
+ */
+struct raid_rebuild {
+	/* stores data on broken memory areas */
+	raid_atomic64 rebuild_matrix[MATRIX_REBUILD_SIZE];
+
+	/* number of memory areas */
+	uint64_t			num_memory_areas;
+
+	/* strip count in one area */
+	uint64_t			strips_per_area;
+
+	/* rebuild flag */
+	raid_atomic64			rebuild_flag;
+};
 
 /*
  * raid_base_bdev_info contains information for the base bdevs which are part of some
@@ -142,6 +170,9 @@ struct raid_bdev {
 
 	/* Raid Level of this raid bdev */
 	enum raid_level			level;
+
+	/* RAID rebuild struct */
+	struct raid_rebuild			*rebuild;
 
 	/* Set to true if destroy of this raid bdev is started. */
 	bool				destroy_started;
