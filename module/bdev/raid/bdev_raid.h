@@ -270,6 +270,9 @@ __RAID_MODULE_REGISTER(__LINE__)(void)					\
     raid_bdev_module_list_add(_module);					\
 }
 
+int raid_bdev_create_cb(void *io_device, void *ctx_buf);
+void raid_bdev_destroy_cb(void *io_device, void *ctx_buf);
+
 bool raid_bdev_io_complete_part(struct raid_bdev_io *raid_io, uint64_t completed,
 				enum spdk_bdev_io_status status);
 void raid_bdev_queue_io_wait(struct raid_bdev_io *raid_io, struct spdk_bdev *bdev,
