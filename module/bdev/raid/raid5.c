@@ -48,15 +48,15 @@ raid5_get_buffer(size_t iovlen)
 {
 	struct iovec *buffer;
 
-	buffer = calloc(1, sizeof(*buffer));
+	buffer = spdk_dma_malloc(sizeof(*buffer), 0, NULL);
 	if (buffer == NULL) {
 		return NULL;
 	}
 
 	buffer->iov_len = iovlen;
-	buffer->iov_base = calloc(buffer->iov_len, sizeof(char));
+	buffer->iov_base = spdk_dma_zmalloc(buffer->iov_len * sizeof(char), 0, NULL);
 	if (buffer->iov_base == NULL) {
-		free(buffer);
+		spdk_dma_free(buffer);
 		return NULL;
 	}
 
@@ -66,8 +66,8 @@ raid5_get_buffer(size_t iovlen)
 static inline void
 raid5_free_buffer(struct iovec *buffer)
 {
-	free(buffer->iov_base);
-	free(buffer);
+	spdk_dma_free(buffer->iov_base);
+	spdk_dma_free(buffer);
 }
 
 static inline void
@@ -292,7 +292,7 @@ raid5_get_stripe_request(struct raid_bdev_io *raid_io)
 {
 	struct raid5_stripe_request *request;
 
-	request = calloc(1, sizeof(struct raid5_stripe_request));
+	request = spdk_dma_malloc(sizeof(struct raid5_stripe_request), 0, NULL);
 	if (request == NULL) {
 		return NULL;
 	}
@@ -300,16 +300,16 @@ raid5_get_stripe_request(struct raid_bdev_io *raid_io)
 	request->raid_io = raid_io;
 	request->strip_buffs_cnt = raid_io->raid_bdev->num_base_bdevs;
 	request->broken_strip_idx = raid_io->raid_bdev->num_base_bdevs;
-	request->strip_buffs = calloc(request->strip_buffs_cnt, sizeof(struct iovec *));
+	request->strip_buffs = spdk_dma_malloc(sizeof(struct iovec *) * request->strip_buffs_cnt, 0, NULL);
 	if (request->strip_buffs == NULL) {
-		free(request);
+		spdk_dma_free(request);
 		return NULL;
 	}
 
-	request->strip_buffs_cnts = calloc(request->strip_buffs_cnt, sizeof(int));
+	request->strip_buffs_cnts = spdk_dma_zmalloc(sizeof(int) * request->strip_buffs_cnt, 0, NULL);
 	if (request->strip_buffs_cnts == NULL) {
-		free(request->strip_buffs);
-		free(request);
+		spdk_dma_free(request->strip_buffs);
+		spdk_dma_free(request);
 		return NULL;
 	}
 
@@ -318,9 +318,9 @@ raid5_get_stripe_request(struct raid_bdev_io *raid_io)
 
 static void
 raid5_free_stripe_request(struct raid5_stripe_request *request) {
-	free(request->strip_buffs_cnts);
-	free(request->strip_buffs);
-	free(request);
+	spdk_dma_free(request->strip_buffs_cnts);
+	spdk_dma_free(request->strip_buffs);
+	spdk_dma_free(request);
 }
 
 static int
@@ -384,10 +384,10 @@ raid5_set_req_strips_iovs_until(struct raid5_stripe_request *request,
 		len = num_blcks * block_size_b;
 
 		request->strip_buffs_cnts[idx] = end_iov_idx - *iov_idx + 1;
-		request->strip_buffs[idx] = calloc(request->strip_buffs_cnts[idx], sizeof(struct iovec));
+		request->strip_buffs[idx] = spdk_dma_malloc(sizeof(struct iovec) * request->strip_buffs_cnts[idx], 0, NULL);
 		if (request->strip_buffs[idx] == NULL) {
 			for (uint8_t i = start_idx; i != idx; i = raid5_next_idx(i, raid_bdev)) {
-				free(request->strip_buffs[i]);
+				spdk_dma_free(request->strip_buffs[i]);
 				request->strip_buffs_cnts[i] = 0;
 			}
 			request->strip_buffs_cnts[idx] = 0;
@@ -433,7 +433,7 @@ raid5_free_req_strips_iovs_until(struct raid5_stripe_request *request,
 	struct raid_bdev *raid_bdev = request->raid_io->raid_bdev;
 
 	for (uint8_t idx = start_idx; idx != until_idx; idx = raid5_next_idx(idx, raid_bdev)) {
-		free(request->strip_buffs[idx]);
+		spdk_dma_free(request->strip_buffs[idx]);
 		request->strip_buffs[idx] = NULL;
 		request->strip_buffs_cnts[idx] = 0;
 	}
@@ -503,7 +503,7 @@ raid5_set_all_strip_buffs(struct raid5_stripe_request *request, uint64_t ofs_blc
 	}
 
 	request->strip_buffs_cnts[sts_idx] = end_iov_idx - iov_idx + 1 + sts_idx_ofs;
-	request->strip_buffs[sts_idx] = calloc(request->strip_buffs_cnts[sts_idx], sizeof(struct iovec));
+	request->strip_buffs[sts_idx] = spdk_dma_malloc(sizeof(struct iovec) * request->strip_buffs_cnts[sts_idx], 0, NULL);
 	if (request->strip_buffs[sts_idx] == NULL) {
 		raid5_free_strips_buffs_until(request, after_es_idx, sts_idx);
 		request->strip_buffs_cnts[sts_idx] = 0;
@@ -545,11 +545,11 @@ raid5_set_all_strip_buffs(struct raid5_stripe_request *request, uint64_t ofs_blc
 	if (sts_idx_ofs == 1) {
 		request->strip_buffs[sts_idx][0].iov_len = (raid5_ofs_blcks(bdev_io, raid_bdev, sts_idx)
 						- ofs_blcks) * block_size_b;
-		request->strip_buffs[sts_idx][0].iov_base = calloc(request->strip_buffs[sts_idx][0].iov_len,
-						sizeof(char));
+		request->strip_buffs[sts_idx][0].iov_base = spdk_dma_zmalloc(sizeof(char) *
+								request->strip_buffs[sts_idx][0].iov_len, 0, NULL);
 		if (request->strip_buffs[sts_idx][0].iov_base == NULL) {
 			raid5_free_strips_buffs_until(request, after_es_idx, sts_idx);
-			free(request->strip_buffs[sts_idx]);
+			spdk_dma_free(request->strip_buffs[sts_idx]);
 			request->strip_buffs[sts_idx] = NULL;
 			request->strip_buffs_cnts[sts_idx] = 0;
 			return -ENOMEM;
@@ -567,9 +567,9 @@ raid5_set_all_strip_buffs(struct raid5_stripe_request *request, uint64_t ofs_blc
 	if (ret != 0) {
 		raid5_free_strips_buffs_until(request, after_es_idx, sts_idx);
 		if (sts_idx_ofs == 1) {
-			free(request->strip_buffs[sts_idx][0].iov_base);
+			spdk_dma_free(request->strip_buffs[sts_idx][0].iov_base);
 		}
-		free(request->strip_buffs[sts_idx]);
+		spdk_dma_free(request->strip_buffs[sts_idx]);
 		request->strip_buffs[sts_idx] = NULL;
 		request->strip_buffs_cnts[sts_idx] = 0;
 		
@@ -592,13 +592,13 @@ raid5_set_all_strip_buffs(struct raid5_stripe_request *request, uint64_t ofs_blc
 	}
 
 	request->strip_buffs_cnts[es_idx] = end_iov_idx - iov_idx + 1 + es_idx_extra;
-	request->strip_buffs[es_idx] = calloc(request->strip_buffs_cnts[es_idx], sizeof(struct iovec));
+	request->strip_buffs[es_idx] = spdk_dma_malloc(sizeof(struct iovec) * request->strip_buffs_cnts[es_idx], 0, NULL);
 	if (request->strip_buffs[es_idx] == NULL) {
 		raid5_free_strips_buffs_until(request, after_es_idx, sts_idx);
 		if (sts_idx_ofs == 1) {
-			free(request->strip_buffs[sts_idx][0].iov_base);
+			spdk_dma_free(request->strip_buffs[sts_idx][0].iov_base);
 		}
-		free(request->strip_buffs[sts_idx]);
+		spdk_dma_free(request->strip_buffs[sts_idx]);
 		request->strip_buffs[sts_idx] = NULL;
 		request->strip_buffs_cnts[sts_idx] = 0;
 		raid5_free_req_strips_iovs_until(request,
@@ -645,21 +645,21 @@ raid5_set_all_strip_buffs(struct raid5_stripe_request *request, uint64_t ofs_blc
 						raid5_num_blcks(bdev_io, raid_bdev, es_idx))) *
 						block_size_b;
 		request->strip_buffs[es_idx][request->strip_buffs_cnts[es_idx] - 1].iov_base =
-						calloc(request->strip_buffs[es_idx][request->strip_buffs_cnts[es_idx]
-						- 1].iov_len,
-						sizeof(char));
+						spdk_dma_zmalloc(sizeof(char) *
+							request->strip_buffs[es_idx][request->strip_buffs_cnts[es_idx]
+							- 1].iov_len, 0 , NULL);
 		if (request->strip_buffs[es_idx][request->strip_buffs_cnts[es_idx] - 1].iov_base
 				== NULL) {
 			raid5_free_strips_buffs_until(request, after_es_idx, sts_idx);
 			if (sts_idx_ofs == 1) {
-				free(request->strip_buffs[sts_idx][0].iov_base);
+				spdk_dma_free(request->strip_buffs[sts_idx][0].iov_base);
 			}
-			free(request->strip_buffs[sts_idx]);
+			spdk_dma_free(request->strip_buffs[sts_idx]);
 			request->strip_buffs[sts_idx] = NULL;
 			request->strip_buffs_cnts[sts_idx] = 0;
 			raid5_free_req_strips_iovs_until(request,
 							raid5_next_idx(sts_idx, raid_bdev), es_idx);
-			free(request->strip_buffs[es_idx]);
+			spdk_dma_free(request->strip_buffs[es_idx]);
 			request->strip_buffs[es_idx] = NULL;
 			request->strip_buffs_cnts[es_idx] = 0;
 			return -ENOMEM;
@@ -680,9 +680,9 @@ raid5_free_all_strip_buffs(struct raid5_stripe_request *request, uint64_t ofs_bl
 	raid5_free_strips_buffs_until(request, after_es_idx, sts_idx);
 
 	if (ofs_blcks != raid5_ofs_blcks(bdev_io, raid_bdev, sts_idx)) {
-		free(request->strip_buffs[sts_idx][0].iov_base);
+		spdk_dma_free(request->strip_buffs[sts_idx][0].iov_base);
 	}
-	free(request->strip_buffs[sts_idx]);
+	spdk_dma_free(request->strip_buffs[sts_idx]);
 	request->strip_buffs[sts_idx] = NULL;
 	request->strip_buffs_cnts[sts_idx] = 0;
 	if (sts_idx == es_idx) {
@@ -694,10 +694,10 @@ raid5_free_all_strip_buffs(struct raid5_stripe_request *request, uint64_t ofs_bl
 
 	if (ofs_blcks + num_blcks > raid5_ofs_blcks(bdev_io, raid_bdev, es_idx) +
 			raid5_num_blcks(bdev_io, raid_bdev, es_idx)) {
-		free(request->strip_buffs[es_idx][request->strip_buffs_cnts[es_idx]
+		spdk_dma_free(request->strip_buffs[es_idx][request->strip_buffs_cnts[es_idx]
 				- 1].iov_base);
 	}
-	free(request->strip_buffs[es_idx]);
+	spdk_dma_free(request->strip_buffs[es_idx]);
 	request->strip_buffs[es_idx] = NULL;
 	request->strip_buffs_cnts[es_idx] = 0;
 }
@@ -2696,8 +2696,8 @@ raid5_wz_req_complete_part_final(struct raid_bdev_io *raid_io, uint64_t complete
 		}
 
 		raid_bdev_destroy_cb(raid_io->raid_bdev, raid_io->raid_ch);
-		free(raid_io->raid_ch);
-		free(raid_io);
+		spdk_dma_free(raid_io->raid_ch);
+		spdk_dma_free(raid_io);
 		return true;
 	} else {
 		return false;
@@ -2799,7 +2799,7 @@ raid5_set_write_type(struct raid_bdev *raid_bdev)
 		}
 	}
 	
-	raid_io = calloc(1, sizeof(struct raid_bdev_io));
+	raid_io = spdk_dma_malloc(sizeof(struct raid_bdev_io), 0, NULL);
 	if (raid_io == NULL) {
 		r5_info->write_type = DEFAULT;
 		return;
@@ -2809,17 +2809,17 @@ raid5_set_write_type(struct raid_bdev *raid_bdev)
 	raid_io->base_bdev_io_remaining = 0;
 	raid_io->base_bdev_io_submitted = 0;
 	raid_io->base_bdev_io_status = SPDK_BDEV_IO_STATUS_SUCCESS;
-	raid_io->raid_ch = calloc(1, sizeof(struct raid_bdev_io_channel));
+	raid_io->raid_ch = spdk_dma_malloc(sizeof(struct raid_bdev_io_channel), 0, NULL);
 	if (raid_io->raid_ch == NULL) {
-		free(raid_io);
+		spdk_dma_free(raid_io);
 		r5_info->write_type = DEFAULT;
 		return;
 	}
 
 	ret = raid_bdev_create_cb(raid_bdev, raid_io->raid_ch);
 	if (ret != 0) {
-		free(raid_io->raid_ch);
-		free(raid_io);
+		spdk_dma_free(raid_io->raid_ch);
+		spdk_dma_free(raid_io);
 		r5_info->write_type = DEFAULT;
 		return;
 	}
@@ -2827,8 +2827,8 @@ raid5_set_write_type(struct raid_bdev *raid_bdev)
 	ret = raid5_submit_write_zeroes_request(raid_io);
 	if (spdk_unlikely(ret != 0)) {
 		raid_bdev_destroy_cb(raid_bdev, raid_io->raid_ch);
-		free(raid_io->raid_ch);
-		free(raid_io);
+		spdk_dma_free(raid_io->raid_ch);
+		spdk_dma_free(raid_io);
 		r5_info->write_type = DEFAULT;
 		return;
 	}
@@ -2866,7 +2866,7 @@ raid5_start(struct raid_bdev *raid_bdev)
 	raid_bdev->bdev.split_on_optimal_io_boundary = true;
 	raid_bdev->min_base_bdevs_operational = raid_bdev->num_base_bdevs - 1;
 
-	r5_info = calloc(1, (sizeof(struct raid5_info)));
+	r5_info = spdk_dma_malloc((sizeof(struct raid5_info)), 0, NULL);
 	assert(r5_info != NULL);
 	raid_bdev->module_private = r5_info;
 
