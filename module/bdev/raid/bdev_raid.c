@@ -62,7 +62,7 @@ static void	raid_bdev_deconfigure(struct raid_bdev *raid_bdev,
  * 0 - success
  * non zero - failure
  */
-static int
+int
 raid_bdev_create_cb(void *io_device, void *ctx_buf)
 {
 	struct raid_bdev            *raid_bdev = io_device;
@@ -134,7 +134,7 @@ raid_bdev_create_cb(void *io_device, void *ctx_buf)
  * returns:
  * none
  */
-static void
+void
 raid_bdev_destroy_cb(void *io_device, void *ctx_buf)
 {
 	struct raid_bdev_io_channel *raid_ch = ctx_buf;
@@ -763,6 +763,8 @@ static struct {
 	{ "0", RAID0 },
 	{ "raid1", RAID1 },
 	{ "1", RAID1 },
+	{ "raid5", RAID5 },
+	{ "5", RAID5 },
 	{ "raid5f", RAID5F },
 	{ "5f", RAID5F },
 	{ "concat", CONCAT },

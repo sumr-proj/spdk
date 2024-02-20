@@ -1,0 +1,15 @@
+{
+  "subsystems": [
+    {
+      "subsystem": "bdev",
+      "config": [
+        {
+          "params": {
+            "name": "Malloc1"
+          },
+          "method": "bdev_malloc_delete"
+        }
+      ]
+    }
+  ]
+}
