@@ -2898,11 +2898,18 @@ raid5_resize(struct raid_bdev *raid_bdev)
 	}
 }
 
+static bool
+raid5_stop(struct raid_bdev *raid_bdev) {
+	spdk_dma_free(raid_bdev->module_private);
+	return true;
+}
+
 static struct raid_bdev_module g_raid5_module = {
 	.level = RAID5,
 	.base_bdevs_min = 3,
 	.memory_domains_supported = false,
 	.start = raid5_start,
+	.stop = raid5_stop,
 	.submit_rw_request = raid5_submit_rw_request,
 	.resize = raid5_resize
 };
