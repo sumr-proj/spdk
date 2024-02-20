@@ -344,6 +344,7 @@ void raid1_submit_rebuild_second_stage(struct spdk_bdev_io *bdev_io, bool succes
 	if (!success)
 	{
 		//TODO: Handle this case (mb add new flag FIRST_STAGE_ERROR)
+		SPDK_WARNLOG("Problem before firs rebuild stage RAID1\n");
 		return;
 	}
 
@@ -387,20 +388,24 @@ raid1_submit_rebuild_request(struct raid_bdev *raid_bdev, struct rebuild_progres
     struct spdk_io_channel *ch = NULL; /*spdk_bdev_get_io_channel(desc)*/
 	struct raid_base_bdev_info *base_info;
 	uint64_t pd_lba, pd_blocks;
+	uint8_t idx = 0;
+
 	if (cb_arg == NULL)
 	{
 		return -ENOMEM;
 	}
 
-	pd_lba = get_area_offset(cycle_iter->iter_progress, rebuild->strips_per_area, raid_bdev->strip_size);
+	pd_lba = get_area_offset(cycle_iter->iter_idx, rebuild->strips_per_area, raid_bdev->strip_size);
 	pd_blocks = get_area_size(rebuild->strips_per_area, raid_bdev->strip_size);
 
 	RAID_FOR_EACH_BASE_BDEV(raid_bdev, base_info) {
 		desc = base_info->desc;
 		ch = spdk_bdev_get_io_channel(desc);
-		if (ch != NULL) {
+		
+		if (ch != NULL && !SPDK_TEST_BIT(&(cycle_iter->br_area_cnt), idx)) {
 			break;
 		}
+		idx++;
 	}
 
 	if (ch == NULL) {

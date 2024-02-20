@@ -19,7 +19,7 @@
 
 #define BASE_BDEVS_MAX_NUM 64
 
-// #include "service.h"
+#include "service.h"
 
 enum rebuild_flag {
 	/* rebuild flag set during initialization */

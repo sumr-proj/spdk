@@ -14,8 +14,6 @@
 #include "bdev_raid.h"
 #include "service.h"
 
-#define DEBUG__
-
 /* ======================= Poller functionality =========================== */
 
 /*
@@ -140,6 +138,8 @@ alloc_base_bdevs_buff(struct raid_bdev *raid_bdev, struct rebuild_progress *cycl
             _free_base_bdevs_buff(raid_bdev, cycle_progress, i);
             return -ENOMEM;
         }
+        
+        i++;
     }
     return 0;
 }
@@ -315,10 +315,6 @@ run_rebuild_poller(void* arg)
     struct raid_rebuild *rebuild = raid_bdev->rebuild;
     struct rebuild_progress *cycle_progress = NULL;
     int ret = 0;
-
-#ifdef DEBUG__
-    SPDK_WARNLOG("poller is working now with: %s!\n", raid_bdev->bdev.name);
-#endif
 
     if (rebuild == NULL)
     {
