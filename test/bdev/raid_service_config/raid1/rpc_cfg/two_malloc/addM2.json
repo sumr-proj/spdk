@@ -1,0 +1,16 @@
+{
+    "subsystems": [
+      {
+        "subsystem": "bdev",
+        "config": [
+          {
+            "method": "bdev_raid_add_base_bdev",
+            "params": {
+                "raid_name": "Raid1",
+                "base_bdev_name": "M2"
+                }
+            }
+        ]
+      }
+    ]
+  }

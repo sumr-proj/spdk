@@ -1,0 +1,12 @@
+[global]
+thread=1
+group_reporting=1
+verify=sha256
+size=4096B
+iodepth=1
+rw=write
+bs=4k
+
+[test]
+filename=/dev/ublkb4
+numjobs=1

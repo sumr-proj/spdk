@@ -1,0 +1,15 @@
+{
+    "subsystems": [
+        {
+        "subsystem": "bdev",
+        "config": [
+            {
+            "method": "bdev_raid_remove_base_bdev",
+            "params": {
+                "name": "M0"
+                }
+            }
+        ]
+        }
+    ]
+  }
