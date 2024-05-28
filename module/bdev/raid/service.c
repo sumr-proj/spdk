@@ -1,4 +1,4 @@
- /*   SPDX-License-Identifier: BSD-3-Clause
+/*   SPDX-License-Identifier: BSD-3-Clause
  *   Copyright (C) 2018 Intel Corporation.
  *   All rights reserved.
  */
@@ -20,11 +20,11 @@
  * The function shold be run after rebuilding of concrete area from iteration
  */
 static inline void
-partly_submit_iteration(bool result ,uint64_t iter_idx, uint16_t area_idx, struct raid_rebuild *rebuild)
+partly_submit_iteration(bool result, uint64_t iter_idx, uint16_t area_idx, struct raid_rebuild *rebuild)
 {
     struct rebuild_cycle_iteration *iter = &(rebuild->cycle_progress->cycle_iteration);
 
-    if(result)
+    if (result)
     {
         SPDK_REMOVE_BIT(&(rebuild->rebuild_matrix[iter_idx]), area_idx);
     }
@@ -37,7 +37,7 @@ _free_sg_buffer_part(struct iovec *vec_array, uint64_t len)
 {
     struct iovec *base_vec;
 
-    for(base_vec = vec_array; base_vec < vec_array + len; base_vec++)
+    for (base_vec = vec_array; base_vec < vec_array + len; base_vec++)
     {
         spdk_dma_free(base_vec->iov_base);
     }
@@ -47,30 +47,30 @@ static inline void
 free_sg_buffer(struct iovec *vec_array, uint64_t len)
 {
     /* usage: struct iovec *a; free_sg_buffer(&a, b); */
-    if(len != 0)
+    if (len != 0)
     {
         _free_sg_buffer_part(vec_array, len);
-    }    
+    }
     free(vec_array);
 }
 
 uint64_t
 get_area_offset(size_t area_idx, size_t area_size, size_t strip_size)
 {
-    return area_idx*area_size*strip_size;
-} 
+    return area_idx * area_size * strip_size;
+}
 
 uint64_t
 get_area_size(size_t area_size, size_t strip_size)
 {
-    return area_size*strip_size;
+    return area_size * strip_size;
 }
 
 static inline struct iovec *
 allocate_sg_buffer(size_t elem_size, size_t elemcnt, size_t align)
 {
     struct iovec *vec_array = calloc(elemcnt, sizeof(struct iovec));
-    if(vec_array == NULL)
+    if (vec_array == NULL)
     {
         return NULL;
     }
@@ -78,8 +78,8 @@ allocate_sg_buffer(size_t elem_size, size_t elemcnt, size_t align)
     for (size_t i = 0; i < elemcnt; i++)
     {
         vec_array[i].iov_len = elem_size;
-        vec_array[i].iov_base = (void*)spdk_dma_zmalloc(sizeof(uint8_t)*vec_array[i].iov_len, align, NULL);
-        if(vec_array[i].iov_base == NULL)
+        vec_array[i].iov_base = (void *)spdk_dma_zmalloc(sizeof(uint8_t) * vec_array[i].iov_len, align, NULL);
+        if (vec_array[i].iov_base == NULL)
         {
             _free_sg_buffer_part(vec_array, i);
             free(vec_array);
@@ -89,13 +89,13 @@ allocate_sg_buffer(size_t elem_size, size_t elemcnt, size_t align)
     return vec_array;
 }
 
-void
-reset_buffer(struct iovec *vec_array, uint32_t len)
+void reset_buffer(struct iovec *vec_array, uint32_t len)
 {
     struct iovec *base_vec;
-    if(len == 0) return;
+    if (len == 0)
+        return;
 
-    for(base_vec = vec_array; base_vec < vec_array + len; base_vec++)
+    for (base_vec = vec_array; base_vec < vec_array + len; base_vec++)
     {
         memset(base_vec->iov_base, 0, base_vec->iov_len);
     }
@@ -120,27 +120,37 @@ free_base_bdevs_buff(struct raid_bdev *raid_bdev, struct rebuild_progress *cycle
 static inline int
 alloc_base_bdevs_buff(struct raid_bdev *raid_bdev, struct rebuild_progress *cycle_progress)
 {
-    uint64_t elem_size = spdk_bdev_get_block_size(&(raid_bdev->bdev))*raid_bdev->strip_size;
+    uint64_t elem_size = spdk_bdev_get_block_size(&(raid_bdev->bdev)) * raid_bdev->strip_size;
     uint8_t i = 0;
     struct raid_base_bdev_info *base_info;
-    
+
     RAID_FOR_EACH_BASE_BDEV(raid_bdev, base_info)
     {
-        struct spdk_bdev *bbdev = spdk_bdev_desc_get_bdev(base_info->desc);
-        if(spdk_bdev_get_write_unit_size(bbdev) != 1)
+        if (base_info->desc != NULL)
         {
-            SPDK_WARNLOG("Unsupported write_unit_size in base bdev of raid");
+            struct spdk_bdev *bbdev = spdk_bdev_desc_get_bdev(base_info->desc);
+
+            if (spdk_bdev_get_write_unit_size(bbdev) != 1)
+            {
+                SPDK_WARNLOG("Unsupported write_unit_size in base bdev of raid");
+            }
+
+            if (bbdev->required_alignment != 0)
+            {
+                SPDK_WARNLOG("Rebuild system unsupported alignment (TODO)");
+            }
         }
-        
-        cycle_progress->base_bdevs_sg_buf[i] = allocate_sg_buffer(elem_size, raid_bdev->rebuild->strips_per_area, bbdev->required_alignment);
+
+        cycle_progress->base_bdevs_sg_buf[i] = allocate_sg_buffer(elem_size, raid_bdev->rebuild->strips_per_area, 0);
         if (cycle_progress->base_bdevs_sg_buf[i] == NULL)
         {
             _free_base_bdevs_buff(raid_bdev, cycle_progress, i);
             return -ENOMEM;
         }
-        
+
         i++;
     }
+
     return 0;
 }
 
@@ -151,7 +161,8 @@ count_broken_areas(ATOMIC_SNAPSHOT_TYPE area_str)
 
     for (uint16_t i = 0; i < LEN_AREA_STR_IN_BIT; i++)
     {
-        if(SPDK_TEST_BIT(&area_str, i)) cnt += 1;
+        if (SPDK_TEST_BIT(&area_str, i))
+            cnt += 1;
     }
 
     return cnt;
@@ -166,11 +177,12 @@ init_rebuild_cycle(struct rebuild_progress *cycle_progress, struct raid_bdev *ra
     cycle_progress->clear_area_str_cnt = 0;
     cycle_progress->area_str_cnt = 0;
 
-    for (uint64_t i = 0; i < rebuild->num_memory_areas ; i++)
+    for (uint64_t i = 0; i < rebuild->num_memory_areas; i++)
     {
-        if (ATOMIC_IS_AREA_STR_CLEAR(&rebuild->rebuild_matrix[i])) continue;
+        if (ATOMIC_IS_AREA_STR_CLEAR(&rebuild->rebuild_matrix[i]))
+            continue;
 
-        if(start_idx == NOT_NEED_REBUILD)
+        if (start_idx == NOT_NEED_REBUILD)
         {
             start_idx = i;
         }
@@ -183,7 +195,9 @@ init_rebuild_cycle(struct rebuild_progress *cycle_progress, struct raid_bdev *ra
     if (start_idx != NOT_NEED_REBUILD)
     {
         raid_bdev->rebuild->cycle_progress = cycle_progress;
-    } else {
+    }
+    else
+    {
         raid_bdev->rebuild->cycle_progress = NULL;
     }
 
@@ -197,7 +211,8 @@ get_iter_idx(int64_t prev_idx, struct raid_bdev *raid_bdev)
 
     for (int64_t i = prev_idx + 1; i < (int64_t)raid_bdev->rebuild->num_memory_areas; i++)
     {
-        if (!SPDK_TEST_BIT(&(cycle_progress->area_proection[b_GET_IDX_BP(i)]), b_GET_SHFT_BP(i))) continue;
+        if (!SPDK_TEST_BIT(&(cycle_progress->area_proection[b_GET_IDX_BP(i)]), b_GET_SHFT_BP(i)))
+            continue;
         return i;
     }
     return NOT_NEED_REBUILD;
@@ -205,14 +220,14 @@ get_iter_idx(int64_t prev_idx, struct raid_bdev *raid_bdev)
 
 static inline void
 finish_rebuild_cycle(struct raid_bdev *raid_bdev)
-{   
+{
     struct raid_rebuild *rebuild = raid_bdev->rebuild;
 
     if (rebuild == NULL)
     {
         return;
     }
-    free_base_bdevs_buff(raid_bdev, rebuild->cycle_progress); 
+    free_base_bdevs_buff(raid_bdev, rebuild->cycle_progress);
     free(rebuild->cycle_progress);
     rebuild->cycle_progress = NULL;
     SPDK_REMOVE_BIT(fl(rebuild), REBUILD_FLAG_IN_PROGRESS);
@@ -230,7 +245,7 @@ init_cycle_iteration(struct raid_rebuild *rebuild, int64_t curr_idx)
     cycle_iter->iter_progress = cycle_iter->snapshot;
 }
 
-void init_cb_arg(struct iteration_step *iter_info, int64_t iter_idx, int16_t area_idx, struct rebuild_cycle_iteration *iteration, struct raid_bdev *raid_bdev) 
+void init_cb_arg(struct iteration_step *iter_info, int64_t iter_idx, int16_t area_idx, struct rebuild_cycle_iteration *iteration, struct raid_bdev *raid_bdev)
 {
     iter_info->area_idx = area_idx;
     iter_info->iter_idx = iter_idx;
@@ -250,49 +265,26 @@ alloc_cb_arg(int64_t iter_idx, int16_t area_idx, struct rebuild_cycle_iteration 
     return iter_info;
 }
 
-void
-free_cd_arg(struct iteration_step *cb)
+void free_cb_arg(struct iteration_step *cb)
 {
-    if(cb == NULL)
+    if (cb == NULL)
     {
-       return; 
+        return;
     }
     free(cb);
 }
 
-/*
- * Callback function.
- */
-void
-continue_rebuild(struct spdk_bdev_io *bdev_io, bool success, void *cb_arg)
+void extern_continue_rebuild(int64_t iter_idx, int16_t area_idx, struct rebuild_cycle_iteration *iteration, struct raid_bdev *raid_bdev)
 {
-    int64_t iter_idx = ((struct iteration_step *)cb_arg)->iter_idx;
-    int16_t area_idx = ((struct iteration_step *)cb_arg)->area_idx;
-    struct rebuild_cycle_iteration *iteration = ((struct iteration_step *)cb_arg)->iteration;
-    struct raid_bdev *raid_bdev = ((struct iteration_step *)cb_arg)->raid_bdev;
     struct rebuild_progress *cycle_progress = raid_bdev->rebuild->cycle_progress;
     int64_t next_iter_idx;
     int ret = 0;
 
-    free_cd_arg(cb_arg);
-    if(bdev_io != NULL){
-        // bdev_io->iov = NULL;
-        spdk_bdev_free_io(bdev_io);
-    }
-    partly_submit_iteration(success, iter_idx, area_idx, raid_bdev->rebuild);
-
-    /* Test whether the end of the iteration or not */
-    if(!ATOMIC_EXCHANGE(&(iteration->pr_area_cnt), iteration->br_area_cnt, 0))
-    {
-        return;
-    }
-
     ++cycle_progress->clear_area_str_cnt;
 
     /* Wether it is the last iteration or not */
-    if(cycle_progress->clear_area_str_cnt == cycle_progress->area_str_cnt)
+    if (cycle_progress->clear_area_str_cnt == cycle_progress->area_str_cnt)
     {
-
         SPDK_SET_BIT(&(raid_bdev->rebuild->rebuild_flag), REBUILD_FLAG_FINISH);
         return;
     }
@@ -302,14 +294,41 @@ continue_rebuild(struct spdk_bdev_io *bdev_io, bool success, void *cb_arg)
 
     ret = raid_bdev->module->rebuild_request(raid_bdev, cycle_progress, continue_rebuild);
 
-    if(spdk_unlikely(ret != 0))
+    if (spdk_unlikely(ret != 0))
     {
         SPDK_SET_BIT(fl(raid_bdev->rebuild), REBUILD_FLAG_FATAL_ERROR);
     }
 }
 
-int
-run_rebuild_poller(void* arg)
+/*
+ * Callback function.
+ */
+void continue_rebuild(struct spdk_bdev_io *bdev_io, bool success, void *cb_arg)
+{
+    int64_t iter_idx = ((struct iteration_step *)cb_arg)->iter_idx;
+    int16_t area_idx = ((struct iteration_step *)cb_arg)->area_idx;
+    struct rebuild_cycle_iteration *iteration = ((struct iteration_step *)cb_arg)->iteration;
+    struct raid_bdev *raid_bdev = ((struct iteration_step *)cb_arg)->raid_bdev;
+
+    free_cb_arg(cb_arg);
+
+    if (bdev_io != NULL)
+    {
+        // bdev_io->iov = NULL;
+        spdk_bdev_free_io(bdev_io);
+    }
+    partly_submit_iteration(success, iter_idx, area_idx, raid_bdev->rebuild);
+
+    /* Test whether the end of the iteration or not */
+    if (!ATOMIC_EXCHANGE(&(iteration->pr_area_cnt), iteration->br_area_cnt, 0))
+    {
+        return;
+    }
+
+    extern_continue_rebuild(iter_idx, area_idx, iteration, raid_bdev);
+}
+
+int run_rebuild_poller(void *arg)
 {
     struct raid_bdev *raid_bdev = arg;
     struct raid_rebuild *rebuild = raid_bdev->rebuild;
@@ -318,8 +337,8 @@ run_rebuild_poller(void* arg)
 
     if (rebuild == NULL)
     {
-       SPDK_WARNLOG("%s doesn't have rebuild struct!\n", raid_bdev->bdev.name);
-       return -ENODEV;
+        SPDK_WARNLOG("%s doesn't have rebuild struct!\n", raid_bdev->bdev.name);
+        return -ENODEV;
     }
     if (!SPDK_TEST_BIT(fl(rebuild), REBUILD_FLAG_INITIALIZED))
     {
@@ -361,7 +380,7 @@ run_rebuild_poller(void* arg)
 
     start_idx = init_rebuild_cycle(cycle_progress, raid_bdev);
 
-    if(start_idx == NOT_NEED_REBUILD)
+    if (start_idx == NOT_NEED_REBUILD)
     {
         /*
          * no need rebuild
@@ -371,16 +390,17 @@ run_rebuild_poller(void* arg)
     }
 
     if (raid_bdev->module->rebuild_request != NULL)
-    {   
+    {
         SPDK_SET_BIT(fl(rebuild), REBUILD_FLAG_IN_PROGRESS);
+        SPDK_ERRLOG("Rebuild have started...\n");
 
         init_cycle_iteration(rebuild, start_idx);
-        
-        if(alloc_base_bdevs_buff(raid_bdev, cycle_progress) != 0)
+
+        if (alloc_base_bdevs_buff(raid_bdev, cycle_progress) != 0)
         {
             return -ENOMEM;
         }
-        
+
         ret = raid_bdev->module->rebuild_request(raid_bdev, cycle_progress, continue_rebuild);
         switch (ret)
         {
@@ -389,7 +409,9 @@ run_rebuild_poller(void* arg)
             finish_rebuild_cycle(raid_bdev);
             break;
         }
-    } else {
+    }
+    else
+    {
         SPDK_ERRLOG("rebuild_request inside raid%d doesn't implemented\n", raid_bdev->level);
         return -ENODEV;
     }

@@ -350,15 +350,20 @@ void raid1_submit_rebuild_second_stage(struct spdk_bdev_io *bdev_io, bool succes
 
 	RAID_FOR_EACH_BASE_BDEV(raid_bdev, base_info) {
 		desc = base_info->desc;
-		ch = spdk_bdev_get_io_channel(desc);
-		if (!SPDK_TEST_BIT(&(cycle_iteration->br_area_cnt), idx)) {
+
+		if (!SPDK_TEST_BIT(&(cycle_iteration->br_area_cnt), idx)){
 			idx++;
 			continue;
 		}
-		// TODO: ch == NULL -> 
-		// if (spdk_unlikely(ret != 0)) {
-			// info->cb(NULL, false, cb_arg_new);
-		// }
+
+		if (desc == NULL) {
+			extern_continue_rebuild(cycle_iteration->iter_idx, idx, cycle_iteration, raid_bdev);
+			idx++;
+			continue;
+		}
+
+		ch = spdk_bdev_get_io_channel(desc);
+
 		cb_arg_new = alloc_cb_arg(cycle_iteration->iter_idx, idx, cycle_iteration, raid_bdev);
 		ret = spdk_bdev_writev_blocks(desc, ch, 
 						  raid_bdev->rebuild->cycle_progress->base_bdevs_sg_buf[info->buf_idx], 
@@ -398,20 +403,34 @@ raid1_submit_rebuild_request(struct raid_bdev *raid_bdev, struct rebuild_progres
 	pd_lba = get_area_offset(cycle_iter->iter_idx, rebuild->strips_per_area, raid_bdev->strip_size);
 	pd_blocks = get_area_size(rebuild->strips_per_area, raid_bdev->strip_size);
 
-	RAID_FOR_EACH_BASE_BDEV(raid_bdev, base_info) {
+	RAID_FOR_EACH_BASE_BDEV(raid_bdev, base_info) 
+	{
 		desc = base_info->desc;
-		ch = spdk_bdev_get_io_channel(desc);
+		if (desc != NULL)
+		{
+			ch = spdk_bdev_get_io_channel(desc);
 		
-		if (ch != NULL && !SPDK_TEST_BIT(&(cycle_iter->br_area_cnt), idx)) {
-			break;
-		}
+			if (ch != NULL && !SPDK_TEST_BIT(&(cycle_iter->br_area_cnt), idx)) 
+			{
+				break;
+			}
+		}	
 		idx++;
 	}
 
-	if (ch == NULL) {
+	if (idx == raid_bdev->num_base_bdevs)
+	{
+		SPDK_WARNLOG("No available devices for reading from raid");
+		SPDK_SET_BIT(&(raid_bdev->rebuild->rebuild_flag), REBUILD_FLAG_FINISH);
+		return -ENODEV;
+	}
+
+	if (ch == NULL) 
+	{
 		SPDK_TEST_BIT(fl(rebuild), REBUILD_FLAG_FATAL_ERROR);
 		return -EIO;
 	}
+
 	cb_arg->cb = cb;
 	cb_arg->pd_lba = pd_lba;
 	cb_arg->pd_blocks = pd_blocks;
@@ -426,7 +445,8 @@ raid1_submit_rebuild_request(struct raid_bdev *raid_bdev, struct rebuild_progres
 						  raid1_submit_rebuild_second_stage, cb_arg);
 	if (ret != 0)
 	{
-		/* TODO: Handle this case */
+		SPDK_TEST_BIT(fl(rebuild), REBUILD_FLAG_FATAL_ERROR);
+		return -EIO;
 	}
 	return ret;
 }

@@ -22,15 +22,16 @@
 #define ATOMIC_EXCHANGE(dest_ptr, exc, src) (raid_atomic64_cmpxchg(dest_ptr, exc, src))
 // ->
 #define b_BASE_TYPE uint64_t
-#define b_BIT_PROECTION(name) b_BASE_TYPE name[SPDK_CEIL_DIV(MATRIX_REBUILD_SIZE, (sizeof(b_BASE_TYPE)*8))]
-#define b_GET_IDX_BP(x) (x / (sizeof(b_BASE_TYPE)*8))
-#define b_GET_SHFT_BP(x) (x % (sizeof(b_BASE_TYPE)*8))
+#define b_BIT_PROECTION(name) b_BASE_TYPE name[SPDK_CEIL_DIV(MATRIX_REBUILD_SIZE, (sizeof(b_BASE_TYPE) * 8))]
+#define b_GET_IDX_BP(x) (x / (sizeof(b_BASE_TYPE) * 8))
+#define b_GET_SHFT_BP(x) (x % (sizeof(b_BASE_TYPE) * 8))
 //
 
 static inline bool
 _CAS(ATOMIC_TYPE *ptr, ATOMIC_SNAPSHOT_TYPE exc, ATOMIC_SNAPSHOT_TYPE src)
 {
-    if (*ptr == exc){
+    if (*ptr == exc)
+    {
         *ptr = src;
         return true;
     }
@@ -45,7 +46,6 @@ struct iteration_step
     struct raid_bdev *raid_bdev;
     spdk_bdev_io_completion_cb cb;
 };
-
 
 struct rebuild_cycle_iteration
 {
@@ -70,8 +70,8 @@ struct rebuild_cycle_iteration
     ATOMIC_SNAPSHOT(iter_progress);
 };
 
-
-struct rebuild_progress {
+struct rebuild_progress
+{
     /*
      * bit proection of rebuild matrix,
      * where each bit corresponds one line(area stripe) in rebuild matrix
@@ -94,35 +94,36 @@ struct rebuild_progress {
 
     /*
      * Buffers for raid base_bdevs.
-     * Each element - SG-buffer (array of iovec); 
-     * Size of each SG-buffer is size of one memory area in bytes; 
+     * Each element - SG-buffer (array of iovec);
+     * Size of each SG-buffer is size of one memory area in bytes;
      * One element from SG-buffer describes buffer size equals size of one strip in bytes.
      */
-    struct iovec* base_bdevs_sg_buf[BASE_BDEVS_MAX_NUM];
+    struct iovec *base_bdevs_sg_buf[BASE_BDEVS_MAX_NUM];
 };
 
+int 
+run_rebuild_poller(void *arg);
 
-int
-run_rebuild_poller(void* arg);
+void continue_rebuild(struct spdk_bdev_io *bdev_io, bool success, void *cb_arg);
 
-void
-continue_rebuild(struct spdk_bdev_io *bdev_io, bool success, void *cb_arg);
+void 
+extern_continue_rebuild(int64_t iter_idx, 
+                        int16_t area_idx, 
+                        struct rebuild_cycle_iteration *iteration, 
+                        struct raid_bdev *raid_bdev);
 
 struct iteration_step *
 alloc_cb_arg(int64_t iter_idx, int16_t area_idx, struct rebuild_cycle_iteration *iteration, struct raid_bdev *raid_bdev);
 
-void 
-init_cb_arg(struct iteration_step *iter_info, 
-            int64_t iter_idx, 
-            int16_t area_idx, 
-            struct rebuild_cycle_iteration *iteration, 
-            struct raid_bdev *raid_bdev);
+void init_cb_arg(struct iteration_step *iter_info,
+                 int64_t iter_idx,
+                 int16_t area_idx,
+                 struct rebuild_cycle_iteration *iteration,
+                 struct raid_bdev *raid_bdev);
 
-void
-free_cd_arg(struct iteration_step *cb);
+void free_cb_arg(struct iteration_step *cb);
 
-void
-reset_buffer(struct iovec *vec_array, uint32_t len);
+void reset_buffer(struct iovec *vec_array, uint32_t len);
 
 uint64_t
 get_area_offset(size_t area_idx, size_t area_size, size_t strip_size);
