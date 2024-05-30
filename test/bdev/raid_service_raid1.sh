@@ -9,13 +9,14 @@ rundir=$(readlink -f $cfgdir/run)
 
 function start_ublk_tgt() {
     $rootdir/scripts/rpc.py ublk_create_target;
-    sleep 1;    
+    sleep 1;
     echo "Ublk target has been created"
 }
 
 function stop_ublk_tgt() {
     $rootdir/scripts/rpc.py ublk_destroy_target;
-    sleep 1;
+    sleep 2;
+    echo "stop ublk target";
 }
 
 function start_tgt() {
@@ -34,7 +35,7 @@ function finish_tgt() {
 function run_tests() {
     for file in $rundir/*
     do
-        if [ -x "$file" ]; 
+        if [ -x "$file" ];
         then
             local ret="";
 
@@ -47,7 +48,7 @@ function run_tests() {
             else
                 ret="\e[31mFAILED\e[0m"
             fi
-            
+
             "$file" finish;
             echo -e "\e[34mTEST(finish)\e[0m: $ret"
             echo ""

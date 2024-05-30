@@ -17,7 +17,7 @@ function start {
     $rootdir/scripts/rpc.py load_config -j $rpc_cfgdir/crt.json;
     sleep 1;
 
-    $rootdir/scripts/rpc.py ublk_start_disk Raid1 4;
+    $rootdir/scripts/rpc.py ublk_start_disk Raid1 20;
     sleep 1;
 }
 
@@ -25,21 +25,28 @@ function action {
     $rootdir/scripts/rpc.py load_config -j $rpc_cfgdir/rfM0.json;
     sleep 1;
 
+    $rootdir/scripts/rpc.py bdev_raid_get_bdevs all;
+
     fio $fio_cfgdir/write.fio;
     sleep 1;
-    
-    # $rootdir/scripts/rpc.py load_config -j $rpc_cfgdir/addM2.json;
-    # sleep 5;
 
-    # $rootdir/scripts/rpc.py load_config -j $rpc_cfgdir/rfM1.json;
-    # sleep 1;
+    $rootdir/scripts/rpc.py load_config -j $rpc_cfgdir/addM2.json;
+    sleep 6;
+
+    $rootdir/scripts/rpc.py load_config -j $rpc_cfgdir/rfM1.json;
+    sleep 1;
+
+    $rootdir/scripts/rpc.py bdev_raid_get_bdevs all;
 
     fio $fio_cfgdir/verif.fio;
+    sleep 1;
+
     ret=$?
+
 }
 
 function finish {
-    $rootdir/scripts/rpc.py ublk_stop_disk 4;
+    $rootdir/scripts/rpc.py ublk_stop_disk 20;
     sleep 1;
 
     $rootdir/scripts/rpc.py load_config -j $rpc_cfgdir/dtr.json

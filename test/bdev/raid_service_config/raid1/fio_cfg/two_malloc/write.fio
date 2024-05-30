@@ -8,5 +8,5 @@ rw=write
 bs=4k
 
 [test]
-filename=/dev/ublkb4
+filename=/dev/ublkb20
 numjobs=1
