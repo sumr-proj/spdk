@@ -14,6 +14,16 @@ struct raid1_info {
 	struct raid_bdev *raid_bdev;
 };
 
+#ifdef SERVICE_DEBUG
+
+#define PRINT_rebuild_first_stage_cb(fs) SPDK_ERRLOG("\
+\nfirst_stage_cb: \
+\n buf_idx=%u \
+\n pd_lba=%lu \
+\n pd_blocks=%lu \n", (fs)->buf_idx, (fs)->pd_lba, (fs)->pd_blocks)
+
+#endif
+
 struct rebuild_first_stage_cb
 {
 	uint8_t buf_idx;
@@ -154,6 +164,15 @@ raid1_submit_read_request(struct raid_bdev_io *raid_io)
 			}
 			base_ch = NULL;
 		}
+
+// TODO REMOVE:
+		if (base_info->desc != NULL){
+			base_ch = spdk_bdev_get_io_channel(base_info->desc);
+			raid_io->raid_ch->base_channel[idx] = base_ch;
+			break;
+		}
+// ------------
+
 		idx++;
 	}
 
@@ -340,7 +359,7 @@ void raid1_submit_rebuild_second_stage(struct spdk_bdev_io *bdev_io, bool succes
 	struct iteration_step *cb_arg_new = NULL;
 	uint8_t idx = 0;
 	int ret = 0;
-	
+
 	if (!success)
 	{
 		//TODO: Handle this case (mb add new flag FIRST_STAGE_ERROR)
@@ -365,10 +384,10 @@ void raid1_submit_rebuild_second_stage(struct spdk_bdev_io *bdev_io, bool succes
 		ch = spdk_bdev_get_io_channel(desc);
 
 		cb_arg_new = alloc_cb_arg(cycle_iteration->iter_idx, idx, cycle_iteration, raid_bdev);
-		ret = spdk_bdev_writev_blocks(desc, ch, 
-						  raid_bdev->rebuild->cycle_progress->base_bdevs_sg_buf[info->buf_idx], 
-						  raid_bdev->rebuild->strips_per_area, 
-						  info->pd_lba, info->pd_blocks, 
+		ret = spdk_bdev_writev_blocks(desc, ch,
+						  raid_bdev->rebuild->cycle_progress->base_bdevs_sg_buf[info->buf_idx],
+						  raid_bdev->rebuild->strips_per_area,
+						  info->pd_lba, info->pd_blocks,
 						  info->cb, cb_arg_new);
 
 		if (spdk_unlikely(ret != 0)) {
@@ -403,29 +422,29 @@ raid1_submit_rebuild_request(struct raid_bdev *raid_bdev, struct rebuild_progres
 	pd_lba = get_area_offset(cycle_iter->iter_idx, rebuild->strips_per_area, raid_bdev->strip_size);
 	pd_blocks = get_area_size(rebuild->strips_per_area, raid_bdev->strip_size);
 
-	RAID_FOR_EACH_BASE_BDEV(raid_bdev, base_info) 
+	RAID_FOR_EACH_BASE_BDEV(raid_bdev, base_info)
 	{
 		desc = base_info->desc;
 		if (desc != NULL)
 		{
 			ch = spdk_bdev_get_io_channel(desc);
-		
-			if (ch != NULL && !SPDK_TEST_BIT(&(cycle_iter->br_area_cnt), idx)) 
+
+			if (ch != NULL && !SPDK_TEST_BIT(&(cycle_iter->br_area_cnt), idx))
 			{
 				break;
 			}
-		}	
+		}
 		idx++;
 	}
 
 	if (idx == raid_bdev->num_base_bdevs)
 	{
-		SPDK_WARNLOG("No available devices for reading from raid");
+		SPDK_ERRLOG("No available devices for reading from raid");
 		SPDK_SET_BIT(&(raid_bdev->rebuild->rebuild_flag), REBUILD_FLAG_FINISH);
 		return -ENODEV;
 	}
 
-	if (ch == NULL) 
+	if (ch == NULL)
 	{
 		SPDK_TEST_BIT(fl(rebuild), REBUILD_FLAG_FATAL_ERROR);
 		return -EIO;
@@ -438,10 +457,10 @@ raid1_submit_rebuild_request(struct raid_bdev *raid_bdev, struct rebuild_progres
 	cb_arg->cycle_progress = cycle_progress;
 	cb_arg->buf_idx = base_idx;
 
-	ret = spdk_bdev_readv_blocks(desc, ch, 
+	ret = spdk_bdev_readv_blocks(desc, ch,
 						  cycle_progress->base_bdevs_sg_buf[base_idx], 
 						  rebuild->strips_per_area, 
-						  pd_lba, pd_blocks, 
+						  pd_lba, pd_blocks,
 						  raid1_submit_rebuild_second_stage, cb_arg);
 	if (ret != 0)
 	{
