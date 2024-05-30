@@ -392,10 +392,9 @@ int run_rebuild_poller(void *arg)
     if (raid_bdev->module->rebuild_request != NULL)
     {
         SPDK_SET_BIT(fl(rebuild), REBUILD_FLAG_IN_PROGRESS);
-        SPDK_ERRLOG("Rebuild have started...\n");
+        SPDK_WARNLOG("Rebuild have started...\n");
 
         init_cycle_iteration(rebuild, start_idx);
-
         if (alloc_base_bdevs_buff(raid_bdev, cycle_progress) != 0)
         {
             return -ENOMEM;

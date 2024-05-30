@@ -10,6 +10,8 @@
 #include "atomic_raid.h"
 #include "bdev_raid.h"
 
+#define SERVICE_DEBUG
+
 //->
 #define __base_desc_from_raid_bdev(raid_bdev, idx) (raid_bdev->base_bdev_info[idx].desc)
 #define fl(rebuild) &(rebuild->rebuild_flag)
@@ -101,15 +103,15 @@ struct rebuild_progress
     struct iovec *base_bdevs_sg_buf[BASE_BDEVS_MAX_NUM];
 };
 
-int 
+int
 run_rebuild_poller(void *arg);
 
 void continue_rebuild(struct spdk_bdev_io *bdev_io, bool success, void *cb_arg);
 
-void 
-extern_continue_rebuild(int64_t iter_idx, 
-                        int16_t area_idx, 
-                        struct rebuild_cycle_iteration *iteration, 
+void
+extern_continue_rebuild(int64_t iter_idx,
+                        int16_t area_idx,
+                        struct rebuild_cycle_iteration *iteration,
                         struct raid_bdev *raid_bdev);
 
 struct iteration_step *
@@ -130,5 +132,27 @@ get_area_offset(size_t area_idx, size_t area_size, size_t strip_size);
 
 uint64_t
 get_area_size(size_t area_size, size_t strip_size);
+
+#ifdef SERVICE_DEBUG
+
+#define PRINT_iteration_step(it) SPDK_ERRLOG("\
+\niter_step: \
+\n area_idx=%d \
+\n iter_idx=%ld \n", (it)->area_idx, (it)->iter_idx)
+
+#define PRINT_rebuild_cycle_iteration(cit) SPDK_ERRLOG("\
+\ncycle_iter: \
+\n br_area_cnt=%d \
+\n iter_idx=%ld \
+\n pr_area_cnt=%lu \
+\n snapshot=%lu \
+\n iter_progress=%lu \n", (cit)->br_area_cnt, (cit)->iter_idx, (cit)->pr_area_cnt, (cit)->snapshot, (cit)->iter_progress)
+
+#define PRINT_rebuild_progress(pr) SPDK_ERRLOG("\
+\nprogress: \
+\n area_str_cnt=%lu \
+\n clear_area_str_cnt=%lu \n", (pr)->area_str_cnt, (pr)->clear_area_str_cnt)
+
+#endif
 
 #endif /* SPDK_RAID_SERVICE_INTERNAL_H */
