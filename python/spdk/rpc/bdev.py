@@ -448,6 +448,20 @@ def bdev_raid_remove_base_bdev(client, name):
     params = {'name': name}
     return client.call('bdev_raid_remove_base_bdev', params)
 
+def bdev_raid_add_base_bdev(client, raid_name, base_bdev_name):
+    """Add base bdev to existing raid bdev
+
+    Args:
+        raid_name: raid bdev name
+        base_bdev_name: base bdev name
+
+    Returns:
+        None
+    """
+    params = {'raid_name': raid_name,
+              'base_bdev_name': base_bdev_name}
+    return client.call('bdev_raid_add_base_bdev', params)
+
 
 def bdev_aio_create(client, filename, name, block_size=None, readonly=False):
     """Construct a Linux AIO block device.

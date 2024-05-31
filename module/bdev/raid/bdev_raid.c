@@ -5,6 +5,7 @@
  */
 
 #include "bdev_raid.h"
+#include "service.h"
 #include "spdk/env.h"
 #include "spdk/thread.h"
 #include "spdk/log.h"
@@ -185,6 +186,7 @@ raid_bdev_cleanup(struct raid_bdev *raid_bdev)
 
 	TAILQ_REMOVE(&g_raid_bdev_list, raid_bdev, global_link);
 	free(raid_bdev->base_bdev_info);
+	spdk_poller_unregister(&(raid_bdev->rebuild_poller));
 }
 
 static void
@@ -951,12 +953,7 @@ raid_bdev_create(const char *name, uint32_t strip_size, uint8_t num_base_bdevs,
 		return -EEXIST;
 	}
 
-	if (level == RAID1) {
-		if (strip_size != 0) {
-			SPDK_ERRLOG("Strip size is not supported by raid1\n");
-			return -EINVAL;
-		}
-	} else if (spdk_u32_is_pow2(strip_size) == false) {
+	if (spdk_u32_is_pow2(strip_size) == false) {
 		SPDK_ERRLOG("Invalid strip size %" PRIu32 "\n", strip_size);
 		return -EINVAL;
 	}
@@ -1009,6 +1006,20 @@ raid_bdev_create(const char *name, uint32_t strip_size, uint8_t num_base_bdevs,
 		return -ENOMEM;
 	}
 
+	/* allocate rebuild struct  */
+	switch(level) {
+		case RAID1:
+			raid_bdev->rebuild = calloc(1, sizeof(struct raid_rebuild));
+			if (!raid_bdev->rebuild) {
+				SPDK_ERRLOG("Unable to allocate memory for raid rebuild struct\n");
+				return -ENOMEM;
+			}
+			raid_bdev->rebuild_poller = SPDK_POLLER_REGISTER(run_rebuild_poller, raid_bdev, 200000);
+			break;
+		default:
+			raid_bdev->rebuild = NULL;
+			raid_bdev->rebuild_poller = NULL;
+	}
 	raid_bdev->module = module;
 	raid_bdev->num_base_bdevs = num_base_bdevs;
 	raid_bdev->base_bdev_info = calloc(raid_bdev->num_base_bdevs,
@@ -1539,19 +1550,28 @@ raid_bdev_configure_base_bdev(struct raid_base_bdev_info *base_info)
 
 	SPDK_DEBUGLOG(bdev_raid, "bdev %s is claimed\n", bdev->name);
 
-	assert(raid_bdev->state != RAID_BDEV_STATE_ONLINE);
-
 	base_info->desc = desc;
-	base_info->blockcnt = bdev->blockcnt;
 	raid_bdev->num_base_bdevs_discovered++;
 	assert(raid_bdev->num_base_bdevs_discovered <= raid_bdev->num_base_bdevs);
 
-	if (raid_bdev->num_base_bdevs_discovered == raid_bdev->num_base_bdevs) {
-		rc = raid_bdev_configure(raid_bdev);
-		if (rc != 0) {
-			SPDK_ERRLOG("Failed to configure raid bdev\n");
-			return rc;
-		}
+	switch (raid_bdev->state) {
+		case RAID_BDEV_STATE_ONLINE:
+			bdev->blockcnt = base_info->blockcnt;
+			break;
+		case RAID_BDEV_STATE_CONFIGURING:
+			base_info->blockcnt = bdev->blockcnt;
+			if (raid_bdev->num_base_bdevs_discovered == raid_bdev->num_base_bdevs) {
+				rc = raid_bdev_configure(raid_bdev);
+				if (rc != 0) {
+					SPDK_ERRLOG("Failed to configure raid bdev\n");
+					return rc;
+				}
+			}
+			break;
+		case RAID_BDEV_STATE_OFFLINE:
+			/* TODO when OFFLINE state is completely implemented */
+		default:
+			SPDK_ERRLOG("unexpected bdev raid state when adding '%s' base bdev", base_info->name);
 	}
 
 	return 0;
@@ -1603,6 +1623,42 @@ raid_bdev_add_base_device(struct raid_bdev *raid_bdev, const char *name, uint8_t
 
 	return 0;
 }
+
+static int
+fill_matrix(void) {
+	SPDK_DEBUGLOG("Fill matrix's stub\n");
+	return 0;
+};
+
+int
+raid_bdev_add_base_bdev(struct raid_bdev *raid_bdev, char *base_bdev_name, uint8_t slot) {
+	int rc;
+	struct spdk_bdev *bdev = spdk_bdev_get_by_name(base_bdev_name);
+
+	if (bdev == NULL) {
+		SPDK_ERRLOG("Currently unable to find bdev with name: %s\n", base_bdev_name);
+		return -ENXIO;
+	}
+
+	if (bdev->blocklen != raid_bdev->bdev.blocklen) {
+		SPDK_ERRLOG("Blocklen of the bdev %s not matching with other base bdevs\n", base_bdev_name);
+		return -EINVAL;
+	}
+
+	if (bdev->blockcnt < raid_bdev->bdev.blockcnt) {
+		SPDK_ERRLOG("The bdev %s size is too small\n", base_bdev_name);
+		return -EINVAL;
+	}
+
+	rc = raid_bdev_add_base_device(raid_bdev, base_bdev_name, slot);
+	if (rc)
+		return rc;
+
+	rc = fill_matrix();
+	if (rc)
+		SPDK_ERRLOG("Failed to copy data to adding base bdev\n");
+	return rc;
+};
 
 /*
  * brief:

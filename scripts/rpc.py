@@ -2138,6 +2138,15 @@ Format: 'user:u1 secret:s1 muser:mu1 msecret:ms1,user:u2 secret:s2 muser:mu2 mse
     p.add_argument('name', help='base bdev name')
     p.set_defaults(func=bdev_raid_remove_base_bdev)
 
+    def bdev_raid_add_base_bdev(args):
+            rpc.bdev.bdev_raid_add_base_bdev(args.client,
+                                                raid_name=args.raid_name,
+                                                base_bdev_name=args.base_bdev_name)
+    p = subparsers.add_parser('bdev_raid_add_base_bdev', help='Add a basic bdev to an existing raid bdev')
+    p.add_argument('-r', '--raid-name', help='raid bdev name', required=True)
+    p.add_argument('-b', '--base-bdev-name', help = 'base bdev name', required=True)
+    p.set_defaults(func=bdev_raid_add_base_bdev)
+
     # split
     def bdev_split_create(args):
         print_array(rpc.bdev.bdev_split_create(args.client,
